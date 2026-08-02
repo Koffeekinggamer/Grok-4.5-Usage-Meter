@@ -13,9 +13,9 @@ const {
 } = require("./lib/meter-state");
 const {
   defaultPidPath,
-  writePidFile,
   clearPidFile,
   isPidAlive,
+  claimMeterSingleton,
 } = require("./lib/pidfile");
 const { getActiveSessionsPath } = require("./lib/paths");
 const { resolveOpenProject } = require("./lib/project");
@@ -30,7 +30,15 @@ const POLL_MS = Number(process.env.GUM_POLL_MS) || 60_000;
 // Efficiency follows the live project; poll often + watch active_sessions.
 const EFF_POLL_MS = Number(process.env.GUM_EFF_POLL_MS) || 15_000;
 const OVERLAY_ASSERT_MS = Number(process.env.GUM_OVERLAY_MS) || 5_000;
-const pidFile = defaultPidPath(path.join(__dirname, ".."));
+const ROOT = path.join(__dirname, "..");
+const pidFile = defaultPidPath(ROOT);
+
+// One Meter overlay per machine install — second launch focuses the first.
+const gotSingletonLock = app.requestSingleInstanceLock();
+if (!gotSingletonLock) {
+  app.quit();
+}
+
 let mainWindow = null;
 let pollTimer = null;
 let effPollTimer = null;
@@ -348,6 +356,8 @@ function startOverlayAssert() {
 }
 
 app.whenReady().then(() => {
+  if (!gotSingletonLock) return;
+
   if (process.platform === "darwin" && app.dock) {
     try {
       app.dock.hide();
@@ -356,10 +366,22 @@ app.whenReady().then(() => {
     }
   }
 
-  writePidFile(pidFile, process.pid);
+  // Kill orphan overlays left by older launches / detached restarts.
+  claimMeterSingleton(ROOT, process.pid);
   createWindow();
   startPolling();
   startOverlayAssert();
+
+  app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      startPolling();
+      startOverlayAssert();
+      return;
+    }
+    mainWindow.show();
+    assertOverlay(mainWindow);
+  });
 
   screen.on("display-metrics-changed", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;

@@ -19,6 +19,7 @@ Forked shape of [Token Usage Meter](https://github.com/Koffeekinggamer/Token-Usa
 - Reads active session context from `~/.grok/sessions/**/signals.json`
 - Scores the open project from live session `cwd` (or `GUM_PROJECT`)
 - Frameless, always-on-top overlay you can drag; double-click to refresh both sides
+- **Single instance** — only one Meter overlay; a second launch focuses the first and exits (orphans are killed on start)
 - Optional Watcher auto-launches the Meter whenever Terminal Grok is open
 
 ## Requirements
