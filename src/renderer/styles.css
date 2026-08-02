@@ -164,46 +164,66 @@ body.bml-open {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-/* Coach panel — left of dial when expanded */
+/* BML Process panel — left of dial, readable spacing */
 #bmlPanel {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 208px;
-  bottom: 8px;
+  top: 10px;
+  left: 10px;
+  right: 212px;
+  bottom: 10px;
   z-index: 4;
-  padding: 10px;
+  padding: 12px 14px 12px;
   overflow: auto;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(28, 25, 23, 0.14);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(28, 25, 23, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
   color: #1c1917;
   cursor: default;
   user-select: text;
   -webkit-user-select: text;
   font-size: 11px;
   line-height: 1.35;
+  text-align: left;
   -webkit-app-region: no-drag;
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
-#bmlPanel[hidden] {
+#bmlPanel[hidden],
+.bml-section[hidden] {
   display: none !important;
 }
 
 .bml-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 6px;
-  font-size: 12px;
+  display: block;
+  text-align: center;
+  margin: 0;
+  padding-bottom: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 .bml-section {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(28, 25, 23, 0.08);
+  margin: 0;
+  padding: 0;
+  border-top: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+#bmlBuildSection {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
 }
 
 .bml-section:first-of-type {
@@ -213,17 +233,20 @@ body.bml-open {
 
 .row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  width: 100%;
 }
 
 .btn-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 0;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -231,9 +254,9 @@ body.bml-open {
   border: 1px solid rgba(28, 25, 23, 0.18);
   background: #f5f5f4;
   color: #1c1917;
-  font: 600 10px/1.2 "Avenir Next", "Segoe UI", sans-serif;
-  padding: 6px 8px;
-  border-radius: 8px;
+  font: 600 11px/1.2 "Avenir Next", "Segoe UI", sans-serif;
+  padding: 8px 14px;
+  border-radius: 999px;
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
@@ -296,11 +319,11 @@ body.bml-open {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  margin-top: 4px;
+  margin-top: 6px;
   border: 1px solid rgba(28, 25, 23, 0.16);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font: 400 11px/1.35 "Avenir Next", "Segoe UI", sans-serif;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: 400 11px/1.4 "Avenir Next", "Segoe UI", sans-serif;
   background: #fff;
   color: #1c1917;
   resize: vertical;
@@ -317,43 +340,88 @@ body.bml-open {
 }
 
 .chain {
-  margin: 4px 0 0;
-  padding-left: 18px;
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 0 0;
+  width: 100%;
+  text-align: left;
+  counter-reset: bml-step;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  min-height: 160px;
 }
 
 .chain li {
-  margin: 2px 0;
-  color: #57534e;
+  counter-increment: bml-step;
+  margin: 0 0 1px;
+  padding: 4px 6px 4px 1.75em;
+  position: relative;
+  color: #44403c;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-decoration: none;
-  transition: color 0.15s ease, opacity 0.15s ease;
+  transition: color 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+}
+
+.chain li::before {
+  content: counter(bml-step) ".";
+  position: absolute;
+  left: 0;
+  width: 1.5em;
+  text-align: right;
+  color: #a8a29e;
+  font-variant-numeric: tabular-nums;
 }
 
 .chain li.active {
   color: #1d4ed8;
   font-weight: 700;
   text-decoration: none;
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 6px;
+}
+
+.chain li.active::before {
+  color: #1d4ed8;
 }
 
 /* Completed skill steps — progress strikethrough */
 .chain li.done {
   color: #a8a29e;
   text-decoration: line-through;
-  opacity: 0.75;
+  opacity: 0.72;
+}
+
+.chain li.done::before {
+  text-decoration: none;
+  opacity: 1;
+}
+
+#bmlMeasureSection .row,
+#bmlLearnSection .row {
+  justify-content: center;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .check {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  font-size: 10px;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
   color: #44403c;
   cursor: pointer;
 }
 
 .notes {
-  margin: 6px 0 0;
-  padding-left: 16px;
-  max-height: 60px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 72px;
   overflow: auto;
+  text-align: left;
 }

@@ -23,7 +23,8 @@ const pidFile = defaultPidPath(ROOT);
 const SIZE = 200;
 /** Collapsed = dial only (BML chip overlays the plate). Expanded = coach + dial. */
 const COLLAPSED = { width: 200, height: 200 };
-const EXPANDED = { width: 420, height: 520 };
+/** BML Process panel + dial — room for full skill list */
+const EXPANDED = { width: 400, height: 480 };
 
 // One Meter overlay per machine install — second launch focuses the first.
 const gotSingletonLock = app.requestSingleInstanceLock();

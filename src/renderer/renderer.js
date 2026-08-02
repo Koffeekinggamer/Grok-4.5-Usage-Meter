@@ -11,7 +11,6 @@ const shellEl = document.getElementById("shell");
 
 const bmlBtn = document.getElementById("bmlBtn");
 const bmlPanel = document.getElementById("bmlPanel");
-const bmlWip = document.getElementById("bmlWip");
 const bmlChain = document.getElementById("bmlChain");
 const mNotes = document.getElementById("mNotes");
 
@@ -157,31 +156,26 @@ function applyBml(view) {
   bmlBtn.classList.toggle("active", Boolean(view.panelOpen));
   bmlBtn.setAttribute("aria-expanded", view.panelOpen ? "true" : "false");
 
-  if (view.wipActive != null && bmlWip) {
-    bmlWip.textContent = "";
-  } else if (bmlWip) {
-    bmlWip.textContent = "";
+  if (bmlChain) {
+    bmlChain.innerHTML = "";
+    const steps = view.skillChain || [];
+    steps.forEach((step) => {
+      const li = document.createElement("li");
+      // Compact: command only (CSS counter handles 1–13)
+      li.textContent = step.command || step.label || "";
+      if (step.active) li.classList.add("active");
+      if (step.done) li.classList.add("done");
+      li.title = [
+        step.label,
+        step.role,
+        step.done ? "completed" : step.active ? "running" : "pending",
+        step.skillPath || null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      bmlChain.appendChild(li);
+    });
   }
-
-  bmlChain.innerHTML = "";
-  const steps = view.skillChain || [];
-  steps.forEach((step, i) => {
-    const li = document.createElement("li");
-    const skillMark = step.skillOk === false ? " ⚠" : step.skillOk ? " ✓" : "";
-    li.textContent = `${i + 1}. ${step.command} — ${step.label}${skillMark}`;
-    if (step.active) li.classList.add("active");
-    // Strikethrough as each task completes (done flag from coach)
-    if (step.done) li.classList.add("done");
-    li.title = [
-      step.role,
-      step.phase ? `phase: ${step.phase}` : null,
-      step.done ? "completed" : step.active ? "running" : "pending",
-      step.skillPath || (step.skillOk === false ? "SKILL.md missing" : null),
-    ]
-      .filter(Boolean)
-      .join("\n");
-    bmlChain.appendChild(li);
-  });
 
   const mDuration = document.getElementById("mDuration");
   const mKill = document.getElementById("mKill");
