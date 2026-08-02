@@ -49,8 +49,12 @@ The Grok identity currently authenticated in the local Terminal Grok CLI, discov
 _Avoid_: Manual API key paste, browser cookie, login form inside the Meter
 
 **Last-good reading**:
-The most recent successful reading still shown on the Meter when a later refresh fails (usage and efficiency are held independently).
+The most recent successful **usage** reading still shown when a later plan/context refresh fails. For efficiency, last-good is held only for transient scan faults on the same open project — switching projects or leaving all projects clears the previous project's bars.
 _Avoid_: Cache, stale data (as a product feature name)
+
+**Live project tracking**:
+Efficiency always re-resolves the open project from Terminal Grok sessions so scores follow whichever project is currently open; plan usage keeps counting regardless.
+_Avoid_: Locked env project path as the default
 
 **Fault state**:
 A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, no project, missing auth file).

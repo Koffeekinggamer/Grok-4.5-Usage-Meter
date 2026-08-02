@@ -20,6 +20,9 @@ const { scoreProject } = require("./score");
  * }} EfficiencyReading
  */
 
+/** @type {Map<string, { mtimeMs: number, scores: import('./score').ProjectScores }>} */
+const scoreCache = new Map();
+
 /**
  * @param {unknown} err
  * @returns {EfficiencyFault}
@@ -36,17 +39,56 @@ function classifyEfficiencyFault(err) {
 }
 
 /**
- * Snapshot efficiency scores for the open building project.
+ * Directory mtime as a cheap "did tree change" signal.
+ * @param {string} root
+ */
+function rootMtimeMs(root) {
+  try {
+    return require("fs").statSync(root).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Score with a short-lived cache so live project switches stay snappy,
+ * while the same project isn't fully re-walked every few seconds.
+ *
+ * @param {string} root
+ * @param {{ name?: string, score?: typeof scoreProject, cacheMs?: number }} [opts]
+ */
+function scoreProjectCached(root, opts = {}) {
+  const score = opts.score || scoreProject;
+  const mtimeMs = rootMtimeMs(root);
+  const hit = scoreCache.get(root);
+  if (hit && hit.mtimeMs === mtimeMs) {
+    return hit.scores;
+  }
+  const scores = score(root, { name: opts.name });
+  scoreCache.set(root, { mtimeMs, scores });
+  // Bound memory if user hops many projects
+  if (scoreCache.size > 24) {
+    const first = scoreCache.keys().next().value;
+    if (first) scoreCache.delete(first);
+  }
+  return scores;
+}
+
+/**
+ * Snapshot efficiency scores for the *currently open* building project.
+ * Always re-resolves the project from live Grok sessions (see project.js).
+ *
  * @param {{
  *   resolveProject?: typeof resolveOpenProject,
  *   score?: typeof scoreProject,
  *   env?: NodeJS.ProcessEnv,
+ *   useCache?: boolean,
  * }} [opts]
  * @returns {Promise<{ ok: true, reading: EfficiencyReading } | { ok: false, fault: EfficiencyFault }>}
  */
 async function takeEfficiencyReading(opts = {}) {
   const resolveProject = opts.resolveProject || resolveOpenProject;
-  const score = opts.score || scoreProject;
+  const useCache = opts.useCache !== false;
 
   try {
     const project = resolveProject({ env: opts.env });
@@ -56,12 +98,18 @@ async function takeEfficiencyReading(opts = {}) {
         fault: {
           kind: "no-project",
           message:
-            "No focused project — open Grok in a project folder or set GUM_PROJECT",
+            "No focused project — open Grok in a project folder (usage still tracks plan)",
         },
       };
     }
 
-    const scores = score(project.root, { name: project.name });
+    const scores = useCache
+      ? scoreProjectCached(project.root, {
+          name: project.name,
+          score: opts.score,
+        })
+      : (opts.score || scoreProject)(project.root, { name: project.name });
+
     return {
       ok: true,
       reading: {
@@ -83,7 +131,14 @@ async function takeEfficiencyReading(opts = {}) {
   }
 }
 
+/** @private test helper */
+function clearScoreCache() {
+  scoreCache.clear();
+}
+
 module.exports = {
   classifyEfficiencyFault,
   takeEfficiencyReading,
+  scoreProjectCached,
+  clearScoreCache,
 };

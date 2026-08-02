@@ -91,7 +91,7 @@ describe("reduceMeterState", () => {
 });
 
 describe("reduceEfficiencyState", () => {
-  it("stores efficiency reading and holds last-good", () => {
+  it("holds last-good only on transient scan faults", () => {
     const prev = reduceEfficiencyState(emptyMeterState(), {
       ok: true,
       reading: efficiencyReading,
@@ -100,11 +100,42 @@ describe("reduceEfficiencyState", () => {
 
     const next = reduceEfficiencyState(prev, {
       ok: false,
-      fault: { kind: "no-project", message: "gone" },
+      fault: { kind: "unreadable", message: "io" },
     });
     assert.equal(next.efficiencyReading.architecture, 72);
     assert.equal(next.showingLastGoodEfficiency, true);
+    assert.equal(next.efficiencyFault.kind, "unreadable");
+  });
+
+  it("clears previous project when no project is open", () => {
+    const prev = reduceEfficiencyState(emptyMeterState(), {
+      ok: true,
+      reading: efficiencyReading,
+    });
+    const next = reduceEfficiencyState(prev, {
+      ok: false,
+      fault: { kind: "no-project", message: "gone" },
+    });
+    assert.equal(next.efficiencyReading, null);
+    assert.equal(next.showingLastGoodEfficiency, false);
     assert.equal(next.efficiencyFault.kind, "no-project");
+  });
+
+  it("does not drop usage reading when efficiency updates", () => {
+    let state = reduceMeterState(emptyMeterState(), { ok: true, reading });
+    state = reduceEfficiencyState(state, {
+      ok: true,
+      reading: efficiencyReading,
+    });
+    assert.equal(state.reading.planPercentUsed, 10);
+    assert.equal(state.efficiencyReading.architecture, 72);
+
+    state = reduceEfficiencyState(state, {
+      ok: false,
+      fault: { kind: "no-project", message: "switched to home" },
+    });
+    assert.equal(state.reading.planPercentUsed, 10, "usage stays");
+    assert.equal(state.efficiencyReading, null);
   });
 });
 

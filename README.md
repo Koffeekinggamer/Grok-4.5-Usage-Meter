@@ -71,9 +71,18 @@ npm run watch-grok
 
 The Meter re-reads `auth.json` on every poll so it picks up silent token refresh from the CLI. Tokens are never written to disk by this app.
 
+## Two independent tracks
+
+| Track | Scope | Behavior |
+|-------|--------|----------|
+| **Usage dial** (left) | Account plan + active session context | Keeps counting across project switches and home sessions |
+| **Efficiency panel** (right) | Open project only | Live: follows the newest focused Grok session `cwd` |
+
+Usage never depends on which project is open. Efficiency never freezes plan %.
+
 ## Project efficiency (right panel)
 
-Scores the **focused building project** on three criteria (0–100 heuristics):
+Scores the **currently open building project** on three criteria (0–100 heuristics):
 
 | Bar | Color | Criterion |
 |-----|-------|-----------|
@@ -81,22 +90,25 @@ Scores the **focused building project** on three criteria (0–100 heuristics):
 | Eff  | Teal   | Code efficiency — file sizes, god files, deps, depth, lockfiles |
 | UI   | Amber  | UI perfection — components, styles, a11y, responsive patterns |
 
-### How the project is chosen
+### How the project is chosen (live)
 
 | Priority | Source |
 |----------|--------|
-| 1 | `GUM_PROJECT` (or `PEM_PROJECT`) env override |
-| 2 | Live Grok session `cwd` from `~/.grok/active_sessions.json` |
-| 3 | Fault: **No project** (home-only sessions are ignored) |
+| 1 | Newest **live** Grok session with a focused project `cwd` (`active_sessions.json`) |
+| 2 | Recent session project cwd (pid just exited) |
+| 3 | `GUM_PROJECT` / `PEM_PROJECT` env fallback (only if no session project) |
+| 4 | Fault: **No project** (home-only sessions — usage dial still works) |
 
-Open Grok inside a project folder (or set `GUM_PROJECT=/path/to/app`) to light up the right panel.
+Force a fixed path (disable live tracking): `GUM_PROJECT_LOCK=1 GUM_PROJECT=/path/to/app`.
+
+The Meter watches `active_sessions.json` and re-scores when you open Grok in another project.
 
 ## Controls
 
 - Drag the overlay to reposition
 - Double-click to force a refresh of **usage + efficiency**
-- Usage poll: `GUM_POLL_MS` (default `60000`)
-- Efficiency poll: `GUM_EFF_POLL_MS` (default `90000`)
+- Usage poll: `GUM_POLL_MS` (default `60000`) — plan/context, always on
+- Efficiency poll: `GUM_EFF_POLL_MS` (default `15000`) — plus session file watch
 - Position: `GUM_X` / `GUM_Y`
 
 ## Reliability
