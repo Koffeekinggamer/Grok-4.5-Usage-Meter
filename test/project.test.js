@@ -74,8 +74,9 @@ describe("resolveOpenProject", () => {
     }
   });
 
-  it("uses GUM_PROJECT only when no session project", () => {
+  it("uses GUM_PROJECT only when no session project or edits", () => {
     const envRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pem-env-only-"));
+    const sessionsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pem-sess-empty-"));
     fs.writeFileSync(path.join(envRoot, "package.json"), "{}");
     const sessionsPath = path.join(envRoot, "active_sessions.json");
     fs.writeFileSync(
@@ -94,6 +95,7 @@ describe("resolveOpenProject", () => {
         env: { GUM_PROJECT: envRoot },
         home: os.homedir(),
         activeSessionsPath: sessionsPath,
+        sessionsDir: sessionsRoot,
         isAlive: () => true,
       });
       assert.ok(p);
@@ -101,6 +103,64 @@ describe("resolveOpenProject", () => {
       assert.equal(p.source, "env");
     } finally {
       fs.rmSync(envRoot, { recursive: true, force: true });
+      fs.rmSync(sessionsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("infers project from session edit hunks when cwd is home", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "pem-home-"));
+    const projectRoot = path.join(home, "My App");
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, "package.json"), "{}");
+    fs.writeFileSync(path.join(projectRoot, "index.js"), "console.log(1)\n");
+
+    const sessionsDir = path.join(home, "sessions");
+    const sessionId = "sess-edits-1";
+    // Grok encodes cwd in the parent folder name
+    const encodedHome = encodeURIComponent(home);
+    const sessionDir = path.join(sessionsDir, encodedHome, sessionId);
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const hunks = [
+      {
+        filePath: path.join(projectRoot, "index.js"),
+        timestamp: "2026-08-01T15:00:00Z",
+      },
+      {
+        filePath: path.join(projectRoot, "package.json"),
+        timestamp: "2026-08-01T15:01:00Z",
+      },
+    ]
+      .map((h) => JSON.stringify(h))
+      .join("\n");
+    fs.writeFileSync(path.join(sessionDir, "hunk_records.jsonl"), hunks + "\n");
+
+    const sessionsPath = path.join(home, "active_sessions.json");
+    fs.writeFileSync(
+      sessionsPath,
+      JSON.stringify([
+        {
+          session_id: sessionId,
+          pid: process.pid,
+          cwd: home,
+          opened_at: "2026-08-01T14:00:00Z",
+        },
+      ])
+    );
+
+    try {
+      const p = resolveOpenProject({
+        env: {},
+        home,
+        activeSessionsPath: sessionsPath,
+        sessionsDir,
+        isAlive: () => true,
+      });
+      assert.ok(p, "expected project from edits");
+      assert.equal(p.root, projectRoot);
+      assert.equal(p.source, "session-edits");
+      assert.equal(p.name, "My App");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 

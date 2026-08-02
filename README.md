@@ -94,14 +94,15 @@ Scores the **currently open building project** on three criteria (0–100 heuris
 
 | Priority | Source |
 |----------|--------|
-| 1 | Newest **live** Grok session with a focused project `cwd` (`active_sessions.json`) |
-| 2 | Recent session project cwd (pid just exited) |
-| 3 | `GUM_PROJECT` / `PEM_PROJECT` env fallback (only if no session project) |
-| 4 | Fault: **No project** (home-only sessions — usage dial still works) |
+| 1 | Newest **live** Grok session with a focused project `cwd` |
+| 2 | **Session edits** — when Grok’s cwd is home (common for Grok Build), infer from recent `hunk_records.jsonl` file paths |
+| 3 | Recent session project cwd (pid just exited) |
+| 4 | `GUM_PROJECT` / `PEM_PROJECT` env fallback |
+| 5 | Fault: **No project** (usage dial still works) |
 
-Force a fixed path (disable live tracking): `GUM_PROJECT_LOCK=1 GUM_PROJECT=/path/to/app`.
+Force a fixed path: `GUM_PROJECT_LOCK=1 GUM_PROJECT=/path/to/app`.
 
-The Meter watches `active_sessions.json` and re-scores when you open Grok in another project.
+The Meter watches `active_sessions.json` and re-scores when the open project changes.
 
 ## Controls
 
