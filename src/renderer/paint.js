@@ -240,7 +240,7 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
     by += 32;
   }
 
-  // Project name (boost button sits below in HTML)
+  // Project name (estimate + boost button sit below in HTML)
   const project = efficiency?.project || "";
   ctx.fillStyle = "rgba(120, 113, 108, 0.95)";
   ctx.font = "600 9px 'Avenir Next', 'Segoe UI', sans-serif";
@@ -249,7 +249,7 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
   const maxChars = 22;
   const shown =
     project.length > maxChars ? `${project.slice(0, maxChars - 1)}…` : project;
-  ctx.fillText(shown, x + w / 2, y + h - 48);
+  ctx.fillText(shown, x + w / 2, y + h - 72);
 
   if (efficiency?.hasFault) {
     ctx.beginPath();

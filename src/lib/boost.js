@@ -217,10 +217,141 @@ function alreadyAtTarget(reading, minTarget = MIN_TARGET) {
   );
 }
 
+/**
+ * @typedef {{
+ *   minutesLow: number,
+ *   minutesHigh: number,
+ *   tokensLow: number,
+ *   tokensHigh: number,
+ *   totalGap: number,
+ *   timeLabel: string,
+ *   tokensLabel: string,
+ *   detail: string,
+ * }} BoostEstimate
+ */
+
+/**
+ * Format minutes as a short approx label.
+ * @param {number} low
+ * @param {number} high
+ */
+function formatTimeRange(low, high) {
+  if (low <= 0 && high <= 0) return "done";
+  const l = Math.max(1, Math.round(low));
+  const h = Math.max(l, Math.round(high));
+  if (h < 60) return `~${l}–${h} min`;
+  const lH = l / 60;
+  const hH = h / 60;
+  if (l >= 60) {
+    return `~${lH.toFixed(1)}–${hH.toFixed(1)} h`;
+  }
+  return `~${l}–${h} min`;
+}
+
+/**
+ * Format token counts as a short approx label (k).
+ * @param {number} low
+ * @param {number} high
+ */
+function formatTokenRange(low, high) {
+  if (low <= 0 && high <= 0) return "— tok";
+  const fmt = (n) => {
+    if (n >= 1000) return `${Math.round(n / 1000)}k`;
+    return String(Math.round(n));
+  };
+  const l = Math.max(0, low);
+  const h = Math.max(l, high);
+  return `~${fmt(l)}–${fmt(h)} tok`;
+}
+
+/**
+ * Heuristic effort to bring all three meter bars to minTarget.
+ * Not a quote — order-of-magnitude for the boost button.
+ *
+ * @param {{
+ *   architecture?: number,
+ *   codeEfficiency?: number,
+ *   uiPerfection?: number,
+ *   fileCount?: number,
+ *   hasUiSurface?: boolean,
+ *   notes?: string[],
+ * }|null|undefined} reading
+ * @param {{ minTarget?: number }} [opts]
+ * @returns {BoostEstimate|null}
+ */
+function estimateBoostEffort(reading, opts = {}) {
+  if (!reading) return null;
+  const minTarget = opts.minTarget ?? MIN_TARGET;
+
+  const arch = Number(reading.architecture) || 0;
+  const eff = Number(reading.codeEfficiency) || 0;
+  const ui = Number(reading.uiPerfection) || 0;
+
+  const gArch = Math.max(0, minTarget - arch);
+  const gEff = Math.max(0, minTarget - eff);
+  const gUi = Math.max(0, minTarget - ui);
+  const totalGap = gArch + gEff + gUi;
+
+  if (totalGap <= 0) {
+    return {
+      minutesLow: 0,
+      minutesHigh: 0,
+      tokensLow: 0,
+      tokensHigh: 0,
+      totalGap: 0,
+      timeLabel: "done",
+      tokensLabel: "— tok",
+      detail: `All bars already ≥${minTarget}%`,
+    };
+  }
+
+  const files = Number(reading.fileCount);
+  const fileN = Number.isFinite(files) && files > 0 ? files : 40;
+  // Larger trees take longer; cap so tiny and huge projects stay sane.
+  const sizeFactor = Math.min(2.4, Math.max(0.55, fileN / 70));
+
+  // Architecture restructure is usually costlier than efficiency polish;
+  // UI work is mid-high, especially when no surface exists yet.
+  let weighted =
+    gArch * 1.25 + gEff * 0.85 + gUi * (reading.hasUiSurface === false ? 1.35 : 1.05);
+
+  const noteCount = Array.isArray(reading.notes) ? reading.notes.length : 0;
+  weighted += Math.min(8, noteCount * 1.2);
+
+  // Wall-clock minutes for a carte-blanche headless run
+  const minutesMid = 5 + weighted * 0.65 * sizeFactor;
+  const minutesLow = Math.max(3, Math.round(minutesMid * 0.65));
+  const minutesHigh = Math.max(minutesLow + 3, Math.round(minutesMid * 1.55));
+
+  // Token expectation (prompt + tool loops + patches) — rough, not billing API
+  const tokensMid = 28_000 + weighted * 6_200 * sizeFactor + fileN * 140;
+  const tokensLow = Math.max(12_000, Math.round(tokensMid * 0.6));
+  const tokensHigh = Math.max(tokensLow + 15_000, Math.round(tokensMid * 1.55));
+
+  const gaps = [];
+  if (gArch > 0) gaps.push(`Arch −${Math.round(gArch)}`);
+  if (gEff > 0) gaps.push(`Eff −${Math.round(gEff)}`);
+  if (gUi > 0) gaps.push(`UI −${Math.round(gUi)}`);
+
+  return {
+    minutesLow,
+    minutesHigh,
+    tokensLow,
+    tokensHigh,
+    totalGap,
+    timeLabel: formatTimeRange(minutesLow, minutesHigh),
+    tokensLabel: formatTokenRange(tokensLow, tokensHigh),
+    detail: `Approx to ≥${minTarget}%: ${gaps.join(" · ")} · ~${fileN} files`,
+  };
+}
+
 module.exports = {
   MIN_TARGET,
   resolveGrokBin,
   buildBoostPrompt,
   launchBoost,
   alreadyAtTarget,
+  estimateBoostEffort,
+  formatTimeRange,
+  formatTokenRange,
 };

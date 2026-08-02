@@ -94,11 +94,39 @@ body:active {
   text-overflow: ellipsis;
 }
 
+/* Approx effort — above the boost button */
+#boostEstimate {
+  position: absolute;
+  right: 22px;
+  bottom: 48px;
+  width: 132px;
+  text-align: center;
+  pointer-events: none;
+  line-height: 1.15;
+}
+
+#boostTime {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #44403c;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+#boostTokens {
+  margin-top: 1px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #78716c;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
 /* Boost button — right panel, over efficiency plate */
 #boostBtn {
   position: absolute;
   right: 22px;
-  bottom: 18px;
+  bottom: 14px;
   left: auto;
   width: 132px;
   height: 26px;

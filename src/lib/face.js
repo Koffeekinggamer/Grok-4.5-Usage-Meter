@@ -18,6 +18,7 @@ const {
   titleHint,
   legendText,
 } = require("./face-copy");
+const { estimateBoostEffort, MIN_TARGET } = require("./boost");
 
 /** Architecture needle / bar — indigo */
 const ARCH_COLOR = "#4f46e5";
@@ -61,6 +62,12 @@ const UI_COLOR = "#d97706";
  *     project: string,
  *     hasFault: boolean,
  *     showingLastGood: boolean,
+ *     estimate: {
+ *       timeLabel: string,
+ *       tokensLabel: string,
+ *       detail: string,
+ *       totalGap: number,
+ *     }|null,
  *   },
  * }} Face
  */
@@ -87,6 +94,7 @@ function barFromPercent(percent, color, key, legend) {
  * @param {import('./efficiency').EfficiencyReading} reading
  */
 function efficiencyFromReading(reading) {
+  const est = estimateBoostEffort(reading, { minTarget: MIN_TARGET });
   return {
     architecture: barFromPercent(
       reading.architecture,
@@ -110,6 +118,14 @@ function efficiencyFromReading(reading) {
     project: projectLine(reading),
     hasFault: false,
     showingLastGood: false,
+    estimate: est
+      ? {
+          timeLabel: est.timeLabel,
+          tokensLabel: est.tokensLabel,
+          detail: est.detail,
+          totalGap: est.totalGap,
+        }
+      : null,
   };
 }
 
@@ -125,6 +141,7 @@ function efficiencyFaultFace(fault) {
     project: faultEfficiencyLine(fault),
     hasFault: true,
     showingLastGood: false,
+    estimate: null,
   };
 }
 

@@ -10,6 +10,9 @@ const legendCursorEl = document.getElementById("legendCursor");
 const legendOtherEl = document.getElementById("legendOther");
 const shellEl = document.getElementById("shell");
 const boostBtn = document.getElementById("boostBtn");
+const boostEstimateEl = document.getElementById("boostEstimate");
+const boostTimeEl = document.getElementById("boostTime");
+const boostTokensEl = document.getElementById("boostTokens");
 
 let face = null;
 let cursorNeedle = { angle: -120, velocity: 0 };
@@ -100,6 +103,23 @@ function applyFace(payload) {
   }
 
   if (payload.boost) applyBoostUi(payload.boost);
+
+  const est = payload.efficiency?.estimate;
+  if (boostEstimateEl && boostTimeEl && boostTokensEl) {
+    if (est && (est.timeLabel || est.tokensLabel)) {
+      boostEstimateEl.hidden = false;
+      boostTimeEl.textContent = est.timeLabel || "—";
+      boostTokensEl.textContent = est.tokensLabel || "— tok";
+      boostEstimateEl.title = est.detail || "Approximate effort to reach ≥80%";
+    } else if (payload.efficiency?.hasFault) {
+      boostEstimateEl.hidden = false;
+      boostTimeEl.textContent = "—";
+      boostTokensEl.textContent = "no project";
+      boostEstimateEl.title = "Open a project to estimate boost effort";
+    } else {
+      boostEstimateEl.hidden = true;
+    }
+  }
 }
 
 let dragging = false;

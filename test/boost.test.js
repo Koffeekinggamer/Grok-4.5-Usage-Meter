@@ -9,6 +9,7 @@ const {
   buildBoostPrompt,
   alreadyAtTarget,
   launchBoost,
+  estimateBoostEffort,
   MIN_TARGET,
 } = require("../src/lib/boost");
 
@@ -95,5 +96,45 @@ describe("launchBoost", () => {
       projectRoot: "",
     });
     assert.equal(result.ok, false);
+  });
+});
+
+describe("estimateBoostEffort", () => {
+  it("returns done labels when already at target", () => {
+    const est = estimateBoostEffort({
+      architecture: 90,
+      codeEfficiency: 85,
+      uiPerfection: 80,
+      fileCount: 20,
+    });
+    assert.ok(est);
+    assert.equal(est.totalGap, 0);
+    assert.equal(est.timeLabel, "done");
+    assert.match(est.tokensLabel, /tok/);
+  });
+
+  it("scales time and tokens with score gaps", () => {
+    const small = estimateBoostEffort({
+      architecture: 75,
+      codeEfficiency: 90,
+      uiPerfection: 78,
+      fileCount: 30,
+      hasUiSurface: true,
+    });
+    const large = estimateBoostEffort({
+      architecture: 40,
+      codeEfficiency: 50,
+      uiPerfection: 30,
+      fileCount: 200,
+      hasUiSurface: false,
+      notes: ["No tests", "No stylesheets", "God-file pressure"],
+    });
+    assert.ok(small && large);
+    assert.ok(small.totalGap > 0);
+    assert.ok(large.minutesHigh > small.minutesHigh);
+    assert.ok(large.tokensHigh > small.tokensHigh);
+    assert.match(small.timeLabel, /min|h|done/);
+    assert.match(small.tokensLabel, /\d/);
+    assert.match(large.detail, /Arch/);
   });
 });
