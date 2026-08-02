@@ -134,7 +134,8 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     show: false,
-    focusable: false,
+    // true so the ↑ 80% button can receive clicks reliably on macOS
+    focusable: true,
     enableLargerThanScreen: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -152,6 +153,14 @@ function createWindow() {
 
   assertOverlay(mainWindow);
   mainWindow.setIgnoreMouseEvents(false);
+  // Clicking the boost control should not require activating another app first
+  if (typeof mainWindow.setVisibleOnAllWorkspaces === "function") {
+    try {
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch {
+      // ignore
+    }
+  }
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
 
   mainWindow.once("ready-to-show", () => {
@@ -481,6 +490,30 @@ ipcMain.handle("efficiency:boost", async () => {
       title: result.error,
     });
     return result;
+  }
+
+  // Grok CLI can exit in milliseconds on bad flags — verify it stayed up.
+  await new Promise((r) => setTimeout(r, 400));
+  if (!isPidAlive(result.pid)) {
+    let logSnippet = "";
+    try {
+      const fs = require("fs");
+      if (result.logFile && fs.existsSync(result.logFile)) {
+        logSnippet = fs.readFileSync(result.logFile, "utf8").trim().slice(0, 280);
+      }
+    } catch {
+      // ignore
+    }
+    const errMsg = logSnippet || "Grok exited immediately — check boost log";
+    setBoostUi({
+      status: "error",
+      label: "Failed",
+      disabled: false,
+      title: errMsg,
+      pid: null,
+      logFile: result.logFile,
+    });
+    return { ok: false, error: errMsg, logFile: result.logFile };
   }
 
   setBoostUi({

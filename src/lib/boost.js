@@ -164,13 +164,13 @@ function launchBoost(reading, opts = {}) {
   const grokBin = opts.grokBin || resolveGrokBin({ env: opts.env });
   const spawnImpl = opts.spawnImpl || spawn;
 
+  // --yolo is an alias of --always-approve; pass only one or Grok errors and exits.
   const args = [
     "--prompt-file",
     promptFile,
     "--cwd",
     reading.projectRoot,
     "--yolo",
-    "--always-approve",
   ];
 
   try {
@@ -181,16 +181,46 @@ function launchBoost(reading, opts = {}) {
       stdio: ["ignore", logFd, logFd],
       env: {
         ...(opts.env || process.env),
+        PATH: [
+          path.dirname(grokBin),
+          path.join(os.homedir(), ".local", "node", "bin"),
+          path.join(os.homedir(), ".grok", "bin"),
+          process.env.PATH || "",
+        ]
+          .filter(Boolean)
+          .join(path.delimiter),
         // Never inherit a locked project from the Meter process
         GUM_PROJECT: reading.projectRoot,
       },
     });
-    fs.closeSync(logFd);
+    // Keep fd open until child fully detached — close after short delay via unref only.
+    // Closing immediately can truncate early writes on some platforms; we already
+    // passed the fd to stdio so the child owns a dup. Safe to close our handle.
+    try {
+      fs.closeSync(logFd);
+    } catch {
+      // ignore
+    }
 
     if (child.pid == null) {
       return { ok: false, error: "Failed to spawn grok" };
     }
-    child.unref();
+
+    // Surface immediate CLI failures into the log (child may exit before unref).
+    if (typeof child.on === "function") {
+      child.on("error", (err) => {
+        try {
+          fs.appendFileSync(
+            logFile,
+            `\n[gum-boost] spawn error: ${err.message}\n`
+          );
+        } catch {
+          // ignore
+        }
+      });
+    }
+
+    if (typeof child.unref === "function") child.unref();
     return {
       ok: true,
       pid: child.pid,

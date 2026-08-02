@@ -80,7 +80,8 @@ describe("launchBoost", () => {
       assert.match(body, /CARTE BLANCHE/i);
       assert.ok(spawns[0].includes("--prompt-file"));
       assert.ok(spawns[0].includes("--yolo"));
-      assert.ok(spawns[0].includes("--always-approve"));
+      // Must not pass both --yolo and --always-approve (aliases → CLI error)
+      assert.ok(!spawns[0].includes("--always-approve"));
       assert.ok(spawns[0].includes("--cwd"));
       assert.ok(spawns[0].includes(root));
     }
