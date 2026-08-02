@@ -9,6 +9,8 @@ const activeSession = require("./active-session");
 const inject = require("./inject");
 const github = require("./github");
 const projectContext = require("./project-context");
+const liveView = require("./live-view");
+const promptLog = require("./prompt-log");
 
 module.exports = {
   ...template,
@@ -20,4 +22,6 @@ module.exports = {
   ...inject,
   ...github,
   ...projectContext,
+  ...liveView,
+  ...promptLog,
 };

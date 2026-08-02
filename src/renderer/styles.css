@@ -226,6 +226,22 @@ body.bml-open {
   gap: 10px;
 }
 
+.bml-cost {
+  margin: 0;
+  padding: 6px 8px 2px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+  line-height: 1.35;
+}
+
+.bml-cost.running {
+  color: #1d4ed8;
+}
+
 .bml-section:first-of-type {
   border-top: none;
   padding-top: 0;
@@ -273,6 +289,18 @@ body.bml-open {
 
 .btn.primary:hover {
   background: #1d4ed8;
+}
+
+.btn.danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.btn.danger:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
 }
 
 .btn.ghost {
@@ -365,6 +393,26 @@ body.bml-open {
   text-overflow: ellipsis;
   text-decoration: none;
   transition: color 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chain li:hover {
+  background: rgba(28, 25, 23, 0.06);
+  color: #1c1917;
+}
+
+.chain li:active,
+.chain li.running-click {
+  background: rgba(37, 99, 235, 0.16);
+  color: #1d4ed8;
+}
+
+.chain li[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.85;
 }
 
 .chain li::before {

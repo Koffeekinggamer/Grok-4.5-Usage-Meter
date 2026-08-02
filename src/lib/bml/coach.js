@@ -21,16 +21,23 @@ const {
   isMeasureAllowedCommand,
   buildMeasureInstrumentPrompt,
   resolveChainForView,
+  estimateChainCost,
+  formatCostEstimate,
+  formatDuration,
+  formatTokens,
+  estimateTokensFromText,
+  EST_TOKENS_PER_SKILL,
 } = require("./skill-chain");
 const { canAdvanceStage, nextStage, WIP_LIMIT } = require("./gates");
 const { formatTicketBody, EMPTY_FIELDS, validateBacklogReady } = require("./template");
-const { injectIntoGrok } = require("./inject");
+const { injectIntoGrok, abortActiveInject } = require("./inject");
 const { createGithubClient } = require("./github");
 const {
   loadActiveProjectContext,
   formatProjectContextForPrompt,
   synthesizeTicketFromProject,
 } = require("./project-context");
+const { writePromptLog } = require("./prompt-log");
 
 /**
  * @param {{
@@ -50,6 +57,8 @@ function createBmlCoach(opts = {}) {
   let state = loadBmlState(statePath);
   const github = opts.github || createGithubClient();
   const inject = opts.inject || injectIntoGrok;
+  /** Cooperative cancel for chain + single-skill runs (and kills active inject). */
+  let cancelRequested = false;
 
   function persist() {
     try {
@@ -148,6 +157,28 @@ function createBmlCoach(opts = {}) {
       : { ok: false, errors: ["Already Done."] };
 
     const chain = resolveChainForView();
+    const pre = estimateChainCost({ fromIndex: 0 });
+    const rc = state.runCost || {};
+    // Wall-clock for the whole run (live from startedAt, not per-skill)
+    let liveElapsedMs = rc.elapsedMs || 0;
+    if (rc.running && rc.startedAt) {
+      liveElapsedMs = Math.max(liveElapsedMs, Date.now() - rc.startedAt);
+    }
+    let costLabel = pre.label;
+    if (rc.running) {
+      const tok = (rc.tokensIn || 0) + (rc.tokensOutEst || 0);
+      costLabel = formatCostEstimate({
+        running: true,
+        stepIndex: Math.min(rc.step || 0, rc.total || SKILL_CHAIN.length),
+        steps: rc.total || SKILL_CHAIN.length,
+        seconds: liveElapsedMs / 1000,
+        tokens: tok,
+      });
+    } else if (rc.lastDurationMs != null && rc.lastTokensEst != null) {
+      costLabel = `Last ${formatDuration(rc.lastDurationMs / 1000)} · ~${formatTokens(rc.lastTokensEst)}  ·  Est. ${pre.label}`;
+    } else {
+      costLabel = `Est. ${pre.label}`;
+    }
 
     return {
       ...state,
@@ -172,6 +203,11 @@ function createBmlCoach(opts = {}) {
       advanceErrors: advanceCheck.ok ? [] : advanceCheck.errors,
       wipLimit: WIP_LIMIT,
       emptyFields: { ...EMPTY_FIELDS },
+      costEstimate: costLabel,
+      costEstimateDetail: pre,
+      liveElapsedMs: rc.running ? liveElapsedMs : rc.lastDurationMs || 0,
+      canCancel: Boolean(rc.running) || cancelRequested,
+      cancelRequested,
       jobBrief:
         state.fields?.hypothesis ||
         state.activeIssue?.title ||
@@ -203,9 +239,26 @@ function createBmlCoach(opts = {}) {
     }
   }
 
+  /**
+   * Stop the current BML run (chain or single skill), kill in-flight inject,
+   * and fully reset strikethroughs, process status, and timers.
+   */
+  function cancelRun() {
+    cancelRequested = true;
+    try {
+      abortActiveInject();
+    } catch {
+      // ignore
+    }
+    // Wipe progress (strikethroughs), inject/prompt state, and all timers
+    dispatch({ type: "run/reset" });
+    return getView();
+  }
+
   return {
     getView,
     getState: () => state,
+    cancelRun,
 
     setPanelOpen(open) {
       return dispatch({ type: open ? "panel/open" : "panel/close" });
@@ -434,13 +487,41 @@ function createBmlCoach(opts = {}) {
     /**
      * Run a single skill at `index` (defaults to current buildStepIndex).
      * @param {number} [index]
+     * @param {{ trackCost?: boolean, onProgress?: (view: object) => void }} [opts]
      */
-    async runSkillStep(index) {
+    async runSkillStep(index, opts = {}) {
       const i =
         Number.isInteger(index) && index >= 0
           ? index
           : state.buildStepIndex;
+      const trackCost = opts.trackCost !== false;
+      const onProgress =
+        typeof opts.onProgress === "function" ? opts.onProgress : null;
+      // When chain already owns running, do not re-open solo cost accounting
+      const solo = !state.runCost?.running && trackCost;
+      if (solo) cancelRequested = false;
+      const startedAt = solo ? Date.now() : state.runCost?.startedAt || Date.now();
+
+      if (cancelRequested) {
+        return getView();
+      }
+
       dispatch({ type: "build/step", index: i });
+      if (solo) {
+        dispatch({
+          type: "run/cost",
+          patch: {
+            running: true,
+            step: i + 1,
+            total: SKILL_CHAIN.length,
+            startedAt,
+            elapsedMs: 0,
+            tokensIn: 0,
+            tokensOutEst: 0,
+          },
+        });
+        if (onProgress) onProgress(getView());
+      }
 
       const project = activeProject();
       const preferCwd = process.env.GUM_BML_CWD || project.cwd || process.cwd();
@@ -457,59 +538,130 @@ function createBmlCoach(opts = {}) {
       const step = stepAt(i) || stepAt(0);
       const chainPos = `Chain step ${i + 1}/${SKILL_CHAIN.length}: ${step?.command || "?"}`;
 
-      if (state.stage === "Measure") {
-        const cmd = step?.command || "/implement";
-        if (!isMeasureAllowedCommand(cmd) && !state.tinyBuild) {
-          const built = buildMeasureInstrumentPrompt({
-            issueUrl: state.activeIssue?.url,
-            metricLine: state.fields?.measure,
-            jobBrief,
+      try {
+        if (cancelRequested) {
+          return finishSolo({ cancelled: true });
+        }
+        if (state.stage === "Measure") {
+          const cmd = step?.command || "/implement";
+          if (!isMeasureAllowedCommand(cmd) && !state.tinyBuild) {
+            const built = buildMeasureInstrumentPrompt({
+              issueUrl: state.activeIssue?.url,
+              metricLine: state.fields?.measure,
+              jobBrief,
+            });
+            const prompt = [
+              built.prompt,
+              "",
+              projectBlock,
+              "",
+              "MEASURE: only collect pre-registered metrics for THIS project.",
+              chainPos,
+            ].join("\n");
+            await this._inject(prompt, {
+              skillPath: built.skillPath,
+              skillOk: built.skillOk,
+              preferCwd,
+              chainPos,
+              stepIndex: i,
+              command: step?.command,
+              label: step?.label,
+            });
+            return finishSolo({
+              cancelled: cancelRequested || state.lastInject?.method === "cancel",
+            });
+          }
+        }
+
+        const built = buildSkillPrompt(step, {
+          issueUrl: state.activeIssue?.url,
+          issueTitle: state.activeIssue?.title,
+          bodyExcerpt: body,
+          stage: state.stage,
+          jobBrief,
+          cwd: preferCwd,
+          projectBlock,
+          extra: [
+            chainPos,
+            "You are one step in an admin carte-blanche BML skill run. Complete THIS skill fully before stopping.",
+            "Do not skip ahead to later chain steps — the coach will invoke those next when auto-running.",
+            "Act with full authority to finish the work; prefer decisive implementation over asking permission.",
+          ].join("\n"),
+        });
+        if (!built.skillOk) {
+          dispatch({
+            type: "error",
+            message:
+              built.skillError ||
+              "Matt skill SKILL.md not found — inject will still try slash command.",
           });
-          const prompt = [
-            built.prompt,
-            "",
-            projectBlock,
-            "",
-            "MEASURE: only collect pre-registered metrics for THIS project.",
-            chainPos,
-          ].join("\n");
-          return this._inject(prompt, {
-            skillPath: built.skillPath,
-            skillOk: built.skillOk,
-            preferCwd,
-            chainPos,
+        }
+        if (cancelRequested) {
+          return finishSolo({ cancelled: true });
+        }
+        await this._inject(built.prompt, {
+          skillPath: built.skillPath,
+          skillOk: built.skillOk,
+          preferCwd,
+          chainPos,
+          stepIndex: i,
+          command: step?.command,
+          label: step?.label,
+        });
+      } catch (err) {
+        if (!cancelRequested) {
+          dispatch({
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
           });
         }
       }
 
-      const built = buildSkillPrompt(step, {
-        issueUrl: state.activeIssue?.url,
-        issueTitle: state.activeIssue?.title,
-        bodyExcerpt: body,
-        stage: state.stage,
-        jobBrief,
-        cwd: preferCwd,
-        projectBlock,
-        extra: [
-          chainPos,
-          "You are one step in an auto-run BML skill chain. Complete THIS skill fully before stopping.",
-          "Do not skip ahead to later chain steps — the coach will invoke those next.",
-        ].join("\n"),
+      return finishSolo({
+        cancelled:
+          cancelRequested ||
+          state.lastInject?.method === "cancel" ||
+          /cancell?ed/i.test(String(state.lastInject?.detail || "")),
       });
-      if (!built.skillOk) {
-        dispatch({
-          type: "error",
-          message:
-            built.skillError ||
-            "Matt skill SKILL.md not found — inject will still try slash command.",
-        });
+
+      /**
+       * @param {{ cancelled?: boolean }} [fin]
+       */
+      function finishSolo(fin = {}) {
+        if (solo) {
+          const cancelled = Boolean(fin.cancelled);
+          if (cancelled) {
+            // Full reset: no strikethroughs, no timers, clean process
+            dispatch({ type: "run/reset" });
+          } else {
+            const durationMs = Date.now() - startedAt;
+            const inTok = estimateTokensFromText(
+              state.lastPrompt?.preview || ""
+            );
+            dispatch({
+              type: "run/cost",
+              patch: {
+                running: false,
+                step: i + 1,
+                total: SKILL_CHAIN.length,
+                startedAt: null,
+                elapsedMs: durationMs,
+                tokensIn: inTok,
+                tokensOutEst: Math.round(EST_TOKENS_PER_SKILL * 0.55),
+                lastDurationMs: durationMs,
+                lastTokensEst: inTok + Math.round(EST_TOKENS_PER_SKILL * 0.55),
+              },
+            });
+            if (state.lastInject?.ok) {
+              // Mark this skill done if inject succeeded
+              dispatch({ type: "build/step", index: i + 1 });
+            }
+          }
+          cancelRequested = false;
+          if (onProgress) onProgress(getView());
+        }
+        return getView();
       }
-      return this._inject(built.prompt, {
-        skillPath: built.skillPath,
-        skillOk: built.skillOk,
-        preferCwd,
-        chainPos,
-      });
     },
 
     /**
@@ -519,6 +671,7 @@ function createBmlCoach(opts = {}) {
      */
     async runAllSkillSteps(opts = {}) {
       const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+      cancelRequested = false;
 
       // Active chat project = experiment; synthesize Build/Measure from that repo
       ensureExperimentFromChatProject();
@@ -555,10 +708,26 @@ function createBmlCoach(opts = {}) {
 
       const start = 0;
       const last = SKILL_CHAIN.length - 1;
+      const startedAt = Date.now();
+      let tokensIn = 0;
+      let tokensOutEst = 0;
+      let cancelled = false;
 
       // Clear prior strikethrough so progress starts fresh
       dispatch({ type: "build/step", index: 0 });
       dispatch({ type: "error", message: null });
+      dispatch({
+        type: "run/cost",
+        patch: {
+          running: true,
+          step: 0,
+          total: SKILL_CHAIN.length,
+          startedAt,
+          elapsedMs: 0,
+          tokensIn: 0,
+          tokensOutEst: 0,
+        },
+      });
       dispatch({
         type: "inject/result",
         ok: true,
@@ -571,17 +740,68 @@ function createBmlCoach(opts = {}) {
       const results = [];
 
       for (let i = start; i <= last; i++) {
+        if (cancelRequested) {
+          cancelled = true;
+          break;
+        }
         // Active = current skill (not yet struck)
         dispatch({ type: "build/step", index: i });
+        dispatch({
+          type: "run/cost",
+          patch: {
+            running: true,
+            step: i + 1,
+            total: SKILL_CHAIN.length,
+            startedAt,
+            elapsedMs: Date.now() - startedAt,
+            tokensIn,
+            tokensOutEst,
+          },
+        });
         if (onProgress) onProgress(getView());
 
         try {
-          await this.runSkillStep(i);
-        } catch (err) {
-          dispatch({
-            type: "error",
-            message: err instanceof Error ? err.message : String(err),
+          // Estimate tokens from the prompt we are about to inject
+          const projectBlock = formatProjectContextForPrompt(project);
+          const body = state.fields ? formatTicketBody(state.fields) : null;
+          const preview = buildSkillPrompt(stepAt(i) || stepAt(0), {
+            issueUrl: state.activeIssue?.url,
+            issueTitle: state.activeIssue?.title,
+            bodyExcerpt: body,
+            stage: "Build",
+            jobBrief: state.activeIssue?.title,
+            cwd: project.cwd,
+            projectBlock,
           });
+          const inTok = estimateTokensFromText(preview.prompt);
+          tokensIn += inTok;
+          // Assume model output roughly similar order of magnitude to skill work
+          tokensOutEst += Math.round(EST_TOKENS_PER_SKILL * 0.55);
+
+          await this.runSkillStep(i, {
+            trackCost: false,
+            onProgress,
+          });
+          if (cancelRequested) {
+            cancelled = true;
+            const step = stepAt(i);
+            results.push({
+              index: i,
+              command: step?.command || `step-${i}`,
+              ok: false,
+            });
+            break;
+          }
+        } catch (err) {
+          if (!cancelRequested) {
+            dispatch({
+              type: "error",
+              message: err instanceof Error ? err.message : String(err),
+            });
+          } else {
+            cancelled = true;
+            break;
+          }
         }
 
         const step = stepAt(i);
@@ -593,14 +813,35 @@ function createBmlCoach(opts = {}) {
 
         // Mark this skill completed → strikethrough (done: i < index)
         dispatch({ type: "build/step", index: i + 1 });
+        dispatch({
+          type: "run/cost",
+          patch: {
+            running: true,
+            step: i + 1,
+            total: SKILL_CHAIN.length,
+            startedAt,
+            elapsedMs: Date.now() - startedAt,
+            tokensIn,
+            tokensOutEst,
+          },
+        });
         if (onProgress) onProgress(getView());
       }
 
-      // All 1–13 struck through briefly, then reset to normal text
-      dispatch({ type: "build/step", index: SKILL_CHAIN.length });
-      if (onProgress) onProgress(getView());
-
+      const durationMs = Date.now() - startedAt;
+      const tokensEst = tokensIn + tokensOutEst;
       const okCount = results.filter((r) => r.ok).length;
+
+      if (cancelled || cancelRequested) {
+        cancelRequested = false;
+        // Full reset so cancel never leaves half-struck rows or stale timers
+        dispatch({ type: "run/reset" });
+        if (onProgress) onProgress(getView());
+        return getView();
+      }
+
+      // Brief “all done” flash (full strikethrough + totals), then full reset
+      dispatch({ type: "build/step", index: SKILL_CHAIN.length });
       const summary = results
         .map((r) => `${r.command}:${r.ok ? "ok" : "fail"}`)
         .join(" · ");
@@ -608,7 +849,21 @@ function createBmlCoach(opts = {}) {
         type: "inject/result",
         ok: okCount === results.length,
         method: "chain",
-        detail: `Chain done ${okCount}/${results.length}. ${summary}`,
+        detail: `Chain done ${okCount}/${results.length} in ${formatDuration(durationMs / 1000)} · ~${formatTokens(tokensEst)}. ${summary}`,
+      });
+      dispatch({
+        type: "run/cost",
+        patch: {
+          running: false,
+          step: SKILL_CHAIN.length,
+          total: SKILL_CHAIN.length,
+          startedAt: null,
+          elapsedMs: durationMs,
+          tokensIn,
+          tokensOutEst,
+          lastDurationMs: durationMs,
+          lastTokensEst: tokensEst,
+        },
       });
       if (okCount < results.length) {
         dispatch({
@@ -618,10 +873,14 @@ function createBmlCoach(opts = {}) {
       } else {
         dispatch({ type: "error", message: null });
       }
+      if (onProgress) onProgress(getView());
 
-      // Auto-reset strikethrough to normal text after full run
-      await new Promise((r) => setTimeout(r, 600));
-      dispatch({ type: "build/step", index: 0 });
+      // Once finished: reset strikethroughs, process, timers — ready to run again
+      await new Promise((r) => setTimeout(r, 700));
+      if (!cancelRequested) {
+        dispatch({ type: "run/reset" });
+      }
+      cancelRequested = false;
       if (onProgress) onProgress(getView());
 
       return getView();
@@ -659,16 +918,69 @@ function createBmlCoach(opts = {}) {
 
     /**
      * @param {string} prompt
-     * @param {{ skillPath?: string|null, skillOk?: boolean, preferCwd?: string, chainPos?: string }} [meta]
+     * @param {{
+     *   skillPath?: string|null,
+     *   skillOk?: boolean,
+     *   preferCwd?: string,
+     *   chainPos?: string,
+     *   stepIndex?: number,
+     *   command?: string,
+     *   label?: string,
+     * }} [meta]
      */
     async _inject(prompt, meta = {}) {
       try {
+        if (cancelRequested) {
+          dispatch({
+            type: "inject/result",
+            ok: false,
+            method: "cancel",
+            detail: "Cancelled before inject",
+          });
+          return getView();
+        }
+
         const preferCwd =
           meta.preferCwd ||
           process.env.GUM_BML_CWD ||
           activeProject().cwd ||
           process.cwd();
-        const result = await inject(prompt, { preferCwd });
+
+        // Persist full prompt for live terminal tail (bml-live)
+        const logged = writePromptLog(prompt, {
+          statePath,
+          stepIndex: meta.stepIndex,
+          command: meta.command,
+          label: meta.label,
+          chainPos: meta.chainPos,
+        });
+        dispatch({
+          type: "prompt/set",
+          prompt: {
+            at: logged.at,
+            stepIndex: meta.stepIndex ?? null,
+            command: meta.command || null,
+            label: meta.label || null,
+            charCount: logged.charCount,
+            preview: logged.preview,
+            path: logged.path,
+          },
+        });
+
+        // Admin carte blanche: always-approve tool use for BML injects
+        const result = await inject(prompt, {
+          preferCwd,
+          yolo: true,
+        });
+        if (cancelRequested || /cancell?ed/i.test(String(result.detail || ""))) {
+          dispatch({
+            type: "inject/result",
+            ok: false,
+            method: "cancel",
+            detail: result.detail || "Cancelled during inject",
+          });
+          return getView();
+        }
         const skillNote = meta.skillPath
           ? ` skill=${meta.skillPath}`
           : meta.skillOk === false
@@ -680,10 +992,19 @@ function createBmlCoach(opts = {}) {
           type: "inject/result",
           ok: result.ok,
           method: result.method,
-          detail: `${result.detail || ""}${skillNote}${projNote}${chainNote}`.trim(),
+          detail: `${result.detail || ""}${skillNote}${projNote}${chainNote} · carte-blanche`.trim(),
         });
         return getView();
       } catch (err) {
+        if (cancelRequested) {
+          dispatch({
+            type: "inject/result",
+            ok: false,
+            method: "cancel",
+            detail: "Cancelled during inject",
+          });
+          return getView();
+        }
         return dispatch({
           type: "error",
           message: err instanceof Error ? err.message : String(err),

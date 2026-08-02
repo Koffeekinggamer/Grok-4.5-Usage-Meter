@@ -166,6 +166,120 @@ const SKILL_CHAIN = Object.freeze([
 
 const IMPLEMENT_INDEX = SKILL_CHAIN.findIndex((s) => s.id === "implement");
 
+/** Rough wall-clock seconds per full Matt skill inject (headless). */
+const EST_SEC_PER_SKILL = 90;
+/** Rough total tokens (in+out) per skill for a typical project inject. */
+const EST_TOKENS_PER_SKILL = 18_000;
+
+/**
+ * Approximate cost of running the full (or remaining) skill chain.
+ * @param {{ fromIndex?: number, total?: number }} [opts]
+ * @returns {{
+ *   steps: number,
+ *   secondsMin: number,
+ *   secondsMax: number,
+ *   tokensMin: number,
+ *   tokensMax: number,
+ *   label: string,
+ * }}
+ */
+function estimateChainCost(opts = {}) {
+  const total = opts.total ?? SKILL_CHAIN.length;
+  const from = Math.max(0, Math.min(total, opts.fromIndex ?? 0));
+  const steps = Math.max(0, total - from);
+  const secondsMid = steps * EST_SEC_PER_SKILL;
+  const secondsMin = Math.max(60, Math.round(secondsMid * 0.55));
+  const secondsMax = Math.round(secondsMid * 1.6);
+  const tokensMid = steps * EST_TOKENS_PER_SKILL;
+  const tokensMin = Math.round(tokensMid * 0.5);
+  const tokensMax = Math.round(tokensMid * 1.5);
+  return {
+    steps,
+    secondsMin,
+    secondsMax,
+    tokensMin,
+    tokensMax,
+    label: formatCostEstimate({
+      secondsMin,
+      secondsMax,
+      tokensMin,
+      tokensMax,
+      steps,
+    }),
+  };
+}
+
+/**
+ * @param {{
+ *   secondsMin?: number,
+ *   secondsMax?: number,
+ *   seconds?: number,
+ *   tokensMin?: number,
+ *   tokensMax?: number,
+ *   tokens?: number,
+ *   steps?: number,
+ *   running?: boolean,
+ *   stepIndex?: number,
+ * }} o
+ */
+function formatCostEstimate(o = {}) {
+  const time =
+    o.seconds != null
+      ? formatDuration(o.seconds)
+      : o.secondsMin != null && o.secondsMax != null
+        ? `${formatDuration(o.secondsMin)}–${formatDuration(o.secondsMax)}`
+        : "—";
+  const tok =
+    o.tokens != null
+      ? formatTokens(o.tokens)
+      : o.tokensMin != null && o.tokensMax != null
+        ? `${formatTokens(o.tokensMin)}–${formatTokens(o.tokensMax)}`
+        : "—";
+  // Wall-clock for the whole run (not per-skill) when running
+  if (o.running) {
+    const stepPart =
+      o.stepIndex != null && o.steps != null
+        ? ` · ${o.stepIndex}/${o.steps}`
+        : "";
+    return `Elapsed ${time}${stepPart} · ~${tok}`;
+  }
+  return `~${time} · ~${tok}`;
+}
+
+/**
+ * @param {number} sec
+ */
+function formatDuration(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return r ? `${m}m ${r}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}h ${rm}m` : `${h}h`;
+}
+
+/**
+ * @param {number} n
+ */
+function formatTokens(n) {
+  const v = Math.max(0, Math.round(Number(n) || 0));
+  if (v < 1000) return `${v}`;
+  if (v < 10_000) return `${(v / 1000).toFixed(1)}k`;
+  if (v < 1_000_000) return `${Math.round(v / 1000)}k`;
+  return `${(v / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * Rough token count from text (chars/4).
+ * @param {string} text
+ */
+function estimateTokensFromText(text) {
+  const len = String(text || "").length;
+  return Math.max(0, Math.ceil(len / 4));
+}
+
 /**
  * @param {number} index
  * @returns {SkillStep|null}
@@ -374,6 +488,8 @@ function resolveChainForView(opts = {}) {
 
 module.exports = {
   SKILL_CHAIN,
+  EST_SEC_PER_SKILL,
+  EST_TOKENS_PER_SKILL,
   stepAt,
   nextStepIndex,
   tinyImplementIndex,
@@ -383,4 +499,9 @@ module.exports = {
   buildMeasureInstrumentPrompt,
   resolveChainForView,
   contextLines,
+  estimateChainCost,
+  formatCostEstimate,
+  formatDuration,
+  formatTokens,
+  estimateTokensFromText,
 };

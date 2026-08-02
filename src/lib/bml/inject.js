@@ -41,22 +41,51 @@ function resolveGrokBin(opts = {}) {
   return "grok";
 }
 
+/** @type {import('child_process').ChildProcess|null} */
+let activeChild = null;
+
+/**
+ * Kill the in-flight grok inject process (if any). Used by BML Cancel.
+ * @returns {boolean} true if a process was signaled
+ */
+function abortActiveInject() {
+  if (!activeChild) return false;
+  const child = activeChild;
+  activeChild = null;
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    // ignore
+  }
+  // Escalate if still around shortly after
+  setTimeout(() => {
+    try {
+      if (!child.killed) child.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+  }, 400);
+  return true;
+}
+
 /**
  * Run a command and collect stdout/stderr.
  * @param {string} bin
  * @param {string[]} args
- * @param {{ cwd?: string, env?: NodeJS.ProcessEnv, spawnImpl?: typeof spawn, timeoutMs?: number }} [opts]
- * @returns {Promise<{ code: number|null, stdout: string, stderr: string }>}
+ * @param {{ cwd?: string, env?: NodeJS.ProcessEnv, spawnImpl?: typeof spawn, timeoutMs?: number, trackActive?: boolean }} [opts]
+ * @returns {Promise<{ code: number|null, stdout: string, stderr: string, aborted?: boolean }>}
  */
 function runCommand(bin, args, opts = {}) {
   const spawnImpl = opts.spawnImpl || spawn;
   const timeoutMs = opts.timeoutMs ?? 120_000;
+  const trackActive = opts.trackActive !== false;
   return new Promise((resolve) => {
     const child = spawnImpl(bin, args, {
       cwd: opts.cwd || process.cwd(),
       env: { ...process.env, ...(opts.env || {}) },
       stdio: ["ignore", "pipe", "pipe"],
     });
+    if (trackActive) activeChild = child;
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -68,6 +97,7 @@ function runCommand(bin, args, opts = {}) {
         // ignore
       }
       settled = true;
+      if (trackActive && activeChild === child) activeChild = null;
       resolve({ code: null, stdout, stderr: stderr + "\n[timeout]" });
     }, timeoutMs);
 
@@ -81,13 +111,21 @@ function runCommand(bin, args, opts = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (trackActive && activeChild === child) activeChild = null;
       resolve({ code: 1, stdout, stderr: String(err.message || err) });
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ code, stdout, stderr });
+      if (trackActive && activeChild === child) activeChild = null;
+      const aborted = signal === "SIGTERM" || signal === "SIGKILL";
+      resolve({
+        code,
+        stdout,
+        stderr: aborted ? (stderr || "") + "\n[aborted]" : stderr,
+        aborted,
+      });
     });
   });
 }
@@ -197,6 +235,14 @@ async function injectIntoGrok(prompt, opts = {}) {
       spawnImpl: opts.spawnImpl,
       timeoutMs: 180_000,
     });
+    if (r.aborted) {
+      return {
+        ok: false,
+        method: "resume",
+        detail: "Cancelled during inject",
+        stdout: r.stdout,
+      };
+    }
     if (r.code === 0) {
       return {
         ok: true,
@@ -216,6 +262,14 @@ async function injectIntoGrok(prompt, opts = {}) {
       spawnImpl: opts.spawnImpl,
       timeoutMs: 180_000,
     });
+    if (r.aborted) {
+      return {
+        ok: false,
+        method: "headless",
+        detail: "Cancelled during inject",
+        stdout: r.stdout,
+      };
+    }
     if (r.code === 0) {
       return {
         ok: true,
@@ -253,4 +307,5 @@ module.exports = {
   runCommand,
   copyPromptToClipboard,
   injectIntoGrok,
+  abortActiveInject,
 };

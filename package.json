@@ -9,7 +9,8 @@
     "test": "node --test test/*.test.js",
     "install-autolaunch": "node scripts/install-autolaunch.js",
     "uninstall-autolaunch": "node scripts/uninstall-autolaunch.js",
-    "watch-grok": "node scripts/watch-grok.js"
+    "watch-grok": "node scripts/watch-grok.js",
+    "bml-live": "node scripts/bml-live.js"
   },
   "engines": {
     "node": ">=18"

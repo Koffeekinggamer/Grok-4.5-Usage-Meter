@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld("tokenMeter", {
     runOneSkillStep(index) {
       return ipcRenderer.invoke("bml:runOneSkillStep", index);
     },
+    cancel() {
+      return ipcRenderer.invoke("bml:cancel");
+    },
     nextSkillStep() {
       return ipcRenderer.invoke("bml:nextSkillStep");
     },

@@ -32,6 +32,26 @@ const { tinyImplementIndex } = require("./skill-chain");
  *   wipActive: number|null,
  *   lastError: string|null,
  *   lastInject: { ok: boolean, method: string, detail?: string }|null,
+ *   lastPrompt: {
+ *     at: string|null,
+ *     stepIndex: number|null,
+ *     command: string|null,
+ *     label: string|null,
+ *     charCount: number,
+ *     preview: string|null,
+ *     path: string|null,
+ *   }|null,
+ *   runCost: {
+ *     running: boolean,
+ *     step: number,
+ *     total: number,
+ *     startedAt: number|null,
+ *     elapsedMs: number,
+ *     tokensIn: number,
+ *     tokensOutEst: number,
+ *     lastDurationMs: number|null,
+ *     lastTokensEst: number|null,
+ *   },
  * }} BmlState
  */
 
@@ -63,6 +83,18 @@ function emptyBmlState() {
     wipActive: null,
     lastError: null,
     lastInject: null,
+    lastPrompt: null,
+    runCost: {
+      running: false,
+      step: 0,
+      total: 0,
+      startedAt: null,
+      elapsedMs: 0,
+      tokensIn: 0,
+      tokensOutEst: 0,
+      lastDurationMs: null,
+      lastTokensEst: null,
+    },
   };
 }
 
@@ -174,6 +206,61 @@ function normalizeState(raw) {
       r.lastInject && typeof r.lastInject === "object"
         ? /** @type {any} */ (r.lastInject)
         : null,
+    lastPrompt: normalizeLastPrompt(r.lastPrompt),
+    runCost: normalizeRunCost(r.runCost),
+  };
+}
+
+/**
+ * @param {unknown} raw
+ */
+function normalizeLastPrompt(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const p = /** @type {Record<string, unknown>} */ (raw);
+  return {
+    at: typeof p.at === "string" ? p.at : null,
+    stepIndex: Number.isFinite(Number(p.stepIndex))
+      ? Math.max(0, Math.floor(Number(p.stepIndex)))
+      : null,
+    command: typeof p.command === "string" ? p.command : null,
+    label: typeof p.label === "string" ? p.label : null,
+    charCount: Number.isFinite(Number(p.charCount))
+      ? Math.max(0, Number(p.charCount))
+      : 0,
+    preview: typeof p.preview === "string" ? p.preview : null,
+    path: typeof p.path === "string" ? p.path : null,
+  };
+}
+
+/**
+ * @param {unknown} raw
+ */
+function normalizeRunCost(raw) {
+  const base = emptyBmlState().runCost;
+  if (!raw || typeof raw !== "object") return base;
+  const c = /** @type {Record<string, unknown>} */ (raw);
+  return {
+    running: Boolean(c.running),
+    step: Number.isFinite(Number(c.step)) ? Math.max(0, Math.floor(Number(c.step))) : 0,
+    total: Number.isFinite(Number(c.total)) ? Math.max(0, Math.floor(Number(c.total))) : 0,
+    startedAt: Number.isFinite(Number(c.startedAt)) ? Number(c.startedAt) : null,
+    elapsedMs: Number.isFinite(Number(c.elapsedMs)) ? Math.max(0, Number(c.elapsedMs)) : 0,
+    tokensIn: Number.isFinite(Number(c.tokensIn)) ? Math.max(0, Number(c.tokensIn)) : 0,
+    tokensOutEst: Number.isFinite(Number(c.tokensOutEst))
+      ? Math.max(0, Number(c.tokensOutEst))
+      : 0,
+    lastDurationMs:
+      c.lastDurationMs == null
+        ? null
+        : Number.isFinite(Number(c.lastDurationMs))
+          ? Math.max(0, Number(c.lastDurationMs))
+          : null,
+    lastTokensEst:
+      c.lastTokensEst == null
+        ? null
+        : Number.isFinite(Number(c.lastTokensEst))
+          ? Math.max(0, Number(c.lastTokensEst))
+          : null,
   };
 }
 
@@ -338,6 +425,36 @@ function reduceBmlState(previous, action) {
           : action.detail
             ? String(action.detail)
             : prev.lastError,
+      };
+    case "prompt/set":
+      return {
+        ...prev,
+        lastPrompt:
+          action.prompt && typeof action.prompt === "object"
+            ? normalizeLastPrompt(action.prompt)
+            : null,
+      };
+    case "run/cost":
+      return {
+        ...prev,
+        runCost: {
+          ...prev.runCost,
+          ...(action.patch && typeof action.patch === "object"
+            ? action.patch
+            : {}),
+        },
+      };
+    case "run/reset":
+      // Cancel / full process reset: clear progress, timers, inject + prompt
+      return {
+        ...prev,
+        buildStepIndex: 0,
+        lastError: null,
+        lastInject: null,
+        lastPrompt: null,
+        runCost: {
+          ...emptyBmlState().runCost,
+        },
       };
     default:
       return prev;

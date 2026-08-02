@@ -12,6 +12,9 @@ const {
   buildSkillPrompt,
   isMeasureAllowedCommand,
   resolveChainForView,
+  estimateChainCost,
+  formatDuration,
+  formatTokens,
 } = require("../src/lib/bml/skill-chain");
 
 describe("skill chain", () => {
@@ -84,5 +87,16 @@ describe("skill chain", () => {
     assert.ok(grill);
     assert.equal(grill.skillOk, true);
     assert.ok(grill.skillPath && path.isAbsolute(grill.skillPath));
+  });
+
+  it("estimates chain time and tokens", () => {
+    const est = estimateChainCost();
+    assert.equal(est.steps, SKILL_CHAIN.length);
+    assert.ok(est.secondsMin > 0 && est.secondsMax > est.secondsMin);
+    assert.ok(est.tokensMin > 0 && est.tokensMax > est.tokensMin);
+    assert.match(est.label, /m|s/);
+    assert.match(est.label, /k|M|\d/);
+    assert.equal(formatDuration(90), "1m 30s");
+    assert.match(formatTokens(18000), /18k|k/);
   });
 });

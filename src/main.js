@@ -289,7 +289,17 @@ function registerBmlIpc() {
   });
 
   ipcMain.handle("bml:runOneSkillStep", async (_e, index) => {
-    const view = await bmlCoach.runSkillStep(index);
+    // Click-to-run a single chain line (1–13) with live elapsed + prompt log
+    const view = await bmlCoach.runSkillStep(index, {
+      trackCost: true,
+      onProgress: (v) => publishBml(v),
+    });
+    publishBml(view);
+    return view;
+  });
+
+  ipcMain.handle("bml:cancel", async () => {
+    const view = bmlCoach.cancelRun();
     publishBml(view);
     return view;
   });

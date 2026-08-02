@@ -12,9 +12,27 @@ const shellEl = document.getElementById("shell");
 const bmlBtn = document.getElementById("bmlBtn");
 const bmlPanel = document.getElementById("bmlPanel");
 const bmlChain = document.getElementById("bmlChain");
+const bmlCost = document.getElementById("bmlCost");
+const bmlCancel = document.getElementById("bmlCancel");
 const mNotes = document.getElementById("mNotes");
 
 const DIAL = 200;
+
+/** @type {ReturnType<typeof setInterval>|null} */
+let bmlElapsedTimer = null;
+/** True while a single-skill or full-chain run is in flight from the UI */
+let bmlBusy = false;
+
+/**
+ * Show Cancel whenever a run is active (UI busy or coach running).
+ * @param {any} view
+ */
+function syncCancelButton(view) {
+  if (!bmlCancel) return;
+  const show = Boolean(bmlBusy || view?.runCost?.running || view?.canCancel);
+  bmlCancel.hidden = !show;
+  bmlCancel.disabled = !show;
+}
 
 /** Idle face so the dial paints immediately (never a transparent hole). */
 const IDLE_FACE = {
@@ -159,13 +177,18 @@ function applyBml(view) {
   if (bmlChain) {
     bmlChain.innerHTML = "";
     const steps = view.skillChain || [];
-    steps.forEach((step) => {
+    steps.forEach((step, index) => {
       const li = document.createElement("li");
       // Compact: command only (CSS counter handles 1–13)
       li.textContent = step.command || step.label || "";
+      li.dataset.stepIndex = String(index);
+      li.setAttribute("role", "button");
+      li.tabIndex = 0;
       if (step.active) li.classList.add("active");
       if (step.done) li.classList.add("done");
+      if (bmlBusy) li.setAttribute("aria-disabled", "true");
       li.title = [
+        `Click to run only ${step.command}`,
         step.label,
         step.role,
         step.done ? "completed" : step.active ? "running" : "pending",
@@ -176,6 +199,10 @@ function applyBml(view) {
       bmlChain.appendChild(li);
     });
   }
+
+  paintBmlCost(view);
+  syncBmlElapsedTick(view);
+  syncCancelButton(view);
 
   const mDuration = document.getElementById("mDuration");
   const mKill = document.getElementById("mKill");
@@ -250,6 +277,123 @@ function bmlApi() {
   return window.tokenMeter?.bml;
 }
 
+/**
+ * Format whole-run wall-clock (not per-skill).
+ * @param {number} sec
+ */
+function formatElapsedLive(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return m ? `${m}m ${String(r).padStart(2, "0")}s` : `${r}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${String(rm).padStart(2, "0")}m ${String(r).padStart(2, "0")}s`;
+}
+
+/**
+ * @param {any} view
+ */
+function paintBmlCost(view) {
+  if (!bmlCost || !view) return;
+  const rc = view.runCost || {};
+  const running = Boolean(rc.running);
+  bmlCost.classList.toggle("running", running);
+
+  if (running && rc.startedAt) {
+    const elapsedSec = (Date.now() - rc.startedAt) / 1000;
+    const step = Math.min(rc.step || 0, rc.total || 13);
+    const total = rc.total || 13;
+    const tok = (rc.tokensIn || 0) + (rc.tokensOutEst || 0);
+    const tokLabel =
+      tok >= 1000 ? `~${Math.round(tok / 1000)}k` : `~${Math.round(tok)}`;
+    bmlCost.textContent = `Elapsed ${formatElapsedLive(elapsedSec)} · ${step}/${total} · ${tokLabel}`;
+  } else {
+    bmlCost.textContent = view.costEstimate || "Est. —";
+  }
+
+  const d = view.costEstimateDetail;
+  if (d) {
+    bmlCost.title = [
+      "Whole-run wall clock (not per skill)",
+      `${d.steps} Matt skills`,
+      `Est. ~${Math.round(d.secondsMin / 60)}–${Math.round(d.secondsMax / 60)} min`,
+      `Tokens ~${Math.round(d.tokensMin / 1000)}k–${Math.round(d.tokensMax / 1000)}k`,
+      "Click a skill line to run only that step (carte blanche)",
+    ].join(" · ");
+  }
+}
+
+/**
+ * Tick the elapsed line every 250ms while a run is active.
+ * @param {any} view
+ */
+function syncBmlElapsedTick(view) {
+  const running = Boolean(view?.runCost?.running && view?.runCost?.startedAt);
+  if (running && !bmlElapsedTimer) {
+    bmlElapsedTimer = setInterval(() => {
+      if (bml) paintBmlCost(bml);
+    }, 250);
+  } else if (!running && bmlElapsedTimer) {
+    clearInterval(bmlElapsedTimer);
+    bmlElapsedTimer = null;
+  }
+}
+
+/**
+ * Click a chain row (1–13) → run only that Matt skill.
+ * @param {number} index
+ */
+async function runSingleSkill(index) {
+  if (bmlBusy || !Number.isInteger(index) || index < 0) return;
+  bmlBusy = true;
+  syncCancelButton({ runCost: { running: true }, canCancel: true });
+  const runBtn = document.getElementById("bmlRun");
+  if (runBtn) {
+    runBtn.disabled = true;
+    runBtn.textContent = `Running #${index + 1}…`;
+  }
+  if (bmlChain) {
+    for (const li of bmlChain.querySelectorAll("li")) {
+      li.setAttribute("aria-disabled", "true");
+      if (Number(li.dataset.stepIndex) === index) {
+        li.classList.add("running-click");
+      }
+    }
+  }
+  try {
+    const view = await bmlApi()?.runOneSkillStep(index);
+    applyBml(view);
+  } catch (err) {
+    console.error("BML single skill failed", err);
+  } finally {
+    bmlBusy = false;
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.textContent = "Run All";
+    }
+    syncCancelButton(bml);
+  }
+}
+
+bmlChain?.addEventListener("click", (e) => {
+  const li = e.target?.closest?.("li[data-step-index]");
+  if (!li || li.getAttribute("aria-disabled") === "true") return;
+  e.preventDefault();
+  e.stopPropagation();
+  const index = Number(li.dataset.stepIndex);
+  if (Number.isInteger(index)) runSingleSkill(index);
+});
+
+bmlChain?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const li = e.target?.closest?.("li[data-step-index]");
+  if (!li) return;
+  e.preventDefault();
+  const index = Number(li.dataset.stepIndex);
+  if (Number.isInteger(index)) runSingleSkill(index);
+});
+
 bmlBtn?.addEventListener("pointerdown", (e) => {
   e.stopPropagation();
 });
@@ -270,22 +414,53 @@ bmlPanel?.addEventListener("pointerdown", (e) => {
 });
 
 document.getElementById("bmlRun")?.addEventListener("click", async () => {
+  if (bmlBusy) return;
+  bmlBusy = true;
+  syncCancelButton({ runCost: { running: true }, canCancel: true });
   const btn = document.getElementById("bmlRun");
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Running all skills…";
   }
+  if (bmlChain) {
+    for (const li of bmlChain.querySelectorAll("li")) {
+      li.setAttribute("aria-disabled", "true");
+    }
+  }
   try {
-    // Binds chat project as experiment + auto-runs all Matt skills in order
+    // Binds chat project as experiment + auto-runs all Matt skills (carte blanche)
     const view = await bmlApi()?.runSkillStep();
     applyBml(view);
   } catch (err) {
     console.error("BML chain run failed", err);
   } finally {
+    bmlBusy = false;
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Run all → Grok";
+      btn.textContent = "Run All";
     }
+    syncCancelButton(bml);
+  }
+});
+
+bmlCancel?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (bmlCancel) {
+    bmlCancel.disabled = true;
+    bmlCancel.textContent = "Cancelling…";
+  }
+  try {
+    const view = await bmlApi()?.cancel();
+    applyBml(view);
+  } catch (err) {
+    console.error("BML cancel failed", err);
+  } finally {
+    if (bmlCancel) {
+      bmlCancel.textContent = "Cancel";
+    }
+    // bmlBusy clears when the in-flight run promise settles
+    syncCancelButton(bml);
   }
 });
 

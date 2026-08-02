@@ -46,7 +46,10 @@
         </header>
 
         <section class="bml-section" id="bmlBuildSection">
-          <ol id="bmlChain" class="chain"></ol>
+          <ol id="bmlChain" class="chain" aria-label="BML skill chain — click a line to run only that skill"></ol>
+          <p id="bmlCost" class="bml-cost" title="Whole-run wall clock and token estimate. Click a skill line to run only that step.">
+            Est. —
+          </p>
           <div class="btn-row">
             <button
               type="button"
@@ -54,7 +57,16 @@
               class="btn primary"
               title="Bind active chat project and auto-run all Matt skills in order"
             >
-              Run all → Grok
+              Run All
+            </button>
+            <button
+              type="button"
+              id="bmlCancel"
+              class="btn danger"
+              title="Cancel the current BML run (stops chain / kills in-flight inject)"
+              hidden
+            >
+              Cancel
             </button>
           </div>
         </section>
