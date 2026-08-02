@@ -1,0 +1,9 @@
+{
+  "turnCount": 4,
+  "contextWindowUsage": 42,
+  "contextTokensUsed": 210000,
+  "contextWindowTokens": 500000,
+  "primaryModelId": "grok-4.5",
+  "modelsUsed": ["grok-4.5"],
+  "toolCallCount": 12
+}

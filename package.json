@@ -1,0 +1,29 @@
+{
+  "name": "grok-usage-meter",
+  "version": "1.0.0",
+  "description": "Always-on-top analog needle overlay for Terminal Grok 4.5 plan + context usage",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "test": "node --test test/*.test.js",
+    "install-autolaunch": "node scripts/install-autolaunch.js",
+    "uninstall-autolaunch": "node scripts/uninstall-autolaunch.js",
+    "watch-grok": "node scripts/watch-grok.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "grok",
+    "xai",
+    "usage",
+    "overlay",
+    "electron"
+  ],
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
