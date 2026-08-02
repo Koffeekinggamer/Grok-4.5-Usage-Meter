@@ -15,9 +15,15 @@ const {
   defaultPidPath,
   writePidFile,
   clearPidFile,
+  isPidAlive,
 } = require("./lib/pidfile");
 const { getActiveSessionsPath } = require("./lib/paths");
 const { resolveOpenProject } = require("./lib/project");
+const {
+  launchBoost,
+  alreadyAtTarget,
+  MIN_TARGET,
+} = require("./lib/boost");
 
 // Plan usage is account-wide — keep polling regardless of open project.
 const POLL_MS = Number(process.env.GUM_POLL_MS) || 60_000;
@@ -30,10 +36,31 @@ let pollTimer = null;
 let effPollTimer = null;
 let overlayTimer = null;
 let sessionsWatcher = null;
+let boostWatchTimer = null;
 /** @type {import('./lib/meter-state').MeterState} */
 let meterState = emptyMeterState();
 /** Last project root we scored — detect live switches */
 let lastEfficiencyRoot = null;
+
+/**
+ * @type {{
+ *   status: 'idle'|'running'|'done'|'error',
+ *   label: string,
+ *   title?: string,
+ *   disabled?: boolean,
+ *   pid?: number|null,
+ *   logFile?: string|null,
+ * }}
+ */
+let boostUi = {
+  status: "idle",
+  label: "↑ 80%",
+  title:
+    "Auto-prompt Grok with carte blanche to raise Arch · Eff · UI to ≥80%",
+  disabled: false,
+  pid: null,
+  logFile: null,
+};
 
 /**
  * Serialize state commits so usage + efficiency never clobber each other.
@@ -42,9 +69,9 @@ let lastEfficiencyRoot = null;
  */
 let commitChain = Promise.resolve();
 
-/** Combined overlay: usage dial + efficiency panel */
+/** Combined overlay: usage dial + efficiency panel + boost button */
 const WIDTH = 368;
-const HEIGHT = 200;
+const HEIGHT = 228;
 
 /**
  * Park the dial on the primary display, top-right of the work area.
@@ -138,7 +165,50 @@ function createWindow() {
 function publishFace() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const face = buildFaceView(meterState);
+  const hasProject = Boolean(meterState.efficiencyReading?.projectRoot);
+  const atTarget =
+    hasProject && alreadyAtTarget(meterState.efficiencyReading, MIN_TARGET);
+
+  if (boostUi.status === "idle") {
+    face.boost = {
+      status: "idle",
+      label: atTarget ? "≥80 ✓" : "↑ 80%",
+      disabled: !hasProject,
+      title: !hasProject
+        ? "No project to boost — open a build in Grok first"
+        : atTarget
+          ? `All bars already ≥${MIN_TARGET}% — click to push further`
+          : `Carte blanche: launch Grok to raise Arch · Eff · UI to ≥${MIN_TARGET}%`,
+    };
+  } else {
+    face.boost = { ...boostUi };
+  }
+
   mainWindow.webContents.send("meter:face", face);
+}
+
+function setBoostUi(next) {
+  boostUi = { ...boostUi, ...next };
+  publishFace();
+}
+
+function watchBoostPid(pid) {
+  if (boostWatchTimer) clearInterval(boostWatchTimer);
+  boostWatchTimer = setInterval(() => {
+    if (!pid || !isPidAlive(pid)) {
+      clearInterval(boostWatchTimer);
+      boostWatchTimer = null;
+      setBoostUi({
+        status: "idle",
+        label: "↑ 80%",
+        pid: null,
+        disabled: false,
+      });
+      // Rescore after the headless run ends
+      refreshEfficiency();
+      return;
+    }
+  }, 4000);
 }
 
 /**
@@ -314,6 +384,7 @@ app.whenReady().then(() => {
 app.on("will-quit", () => {
   clearPidFile(pidFile);
   if (overlayTimer) clearInterval(overlayTimer);
+  if (boostWatchTimer) clearInterval(boostWatchTimer);
   if (sessionsWatcher) {
     try {
       sessionsWatcher.close();
@@ -327,6 +398,7 @@ app.on("window-all-closed", () => {
   if (pollTimer) clearInterval(pollTimer);
   if (effPollTimer) clearInterval(effPollTimer);
   if (overlayTimer) clearInterval(overlayTimer);
+  if (boostWatchTimer) clearInterval(boostWatchTimer);
   if (sessionsWatcher) {
     try {
       sessionsWatcher.close();
@@ -339,6 +411,73 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("usage:refresh", async () => {
   await refreshAll();
+});
+
+/**
+ * Carte-blanche boost: spawn Grok headless against the open project
+ * with a prompt to raise all efficiency scores to ≥80%.
+ */
+ipcMain.handle("efficiency:boost", async () => {
+  // Fresh reading so the prompt has current bars
+  const event = await takeEfficiencyReading({ useCache: false });
+  await commit((state) => reduceEfficiencyState(state, event));
+
+  if (!event.ok || !event.reading?.projectRoot) {
+    setBoostUi({
+      status: "error",
+      label: "No project",
+      disabled: false,
+    });
+    return {
+      ok: false,
+      error: event.ok
+        ? "No project root"
+        : event.fault?.message || "No focused project",
+    };
+  }
+
+  if (boostUi.status === "running" && boostUi.pid && isPidAlive(boostUi.pid)) {
+    return {
+      ok: false,
+      error: `Boost already running (pid ${boostUi.pid})`,
+      pid: boostUi.pid,
+    };
+  }
+
+  setBoostUi({
+    status: "running",
+    label: "Building…",
+    disabled: true,
+  });
+
+  const result = launchBoost(event.reading);
+  if (!result.ok) {
+    setBoostUi({
+      status: "error",
+      label: "Failed",
+      disabled: false,
+      title: result.error,
+    });
+    return result;
+  }
+
+  setBoostUi({
+    status: "running",
+    label: "Grok building",
+    disabled: true,
+    pid: result.pid,
+    logFile: result.logFile,
+    title: `Grok pid ${result.pid} · log ${result.logFile}`,
+  });
+  watchBoostPid(result.pid);
+
+  return {
+    ok: true,
+    pid: result.pid,
+    logFile: result.logFile,
+    promptFile: result.promptFile,
+    projectRoot: result.projectRoot,
+  };
 });
 
 ipcMain.on("window:drag", (_event, { dx, dy }) => {

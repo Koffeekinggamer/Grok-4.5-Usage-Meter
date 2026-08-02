@@ -108,9 +108,11 @@ The Meter watches `active_sessions.json` and re-scores when the open project cha
 
 - Drag the overlay to reposition
 - Double-click to force a refresh of **usage + efficiency**
+- **↑ 80%** button (efficiency panel) — launches **Grok headless** with carte blanche to raise Architecture, Code efficiency, and UI perfection each to **≥ 80%** (`grok --prompt-file … --cwd <project> --yolo --always-approve`)
 - Usage poll: `GUM_POLL_MS` (default `60000`) — plan/context, always on
 - Efficiency poll: `GUM_EFF_POLL_MS` (default `15000`) — plus session file watch
 - Position: `GUM_X` / `GUM_Y`
+- Grok binary override: `GUM_GROK_BIN`
 
 ## Reliability
 

@@ -18,13 +18,13 @@ body:active {
 #shell {
   position: relative;
   width: 368px;
-  height: 200px;
+  height: 228px;
 }
 
 #gauge {
   display: block;
   width: 368px;
-  height: 200px;
+  height: 228px;
 }
 
 /* Usage labels sit over the left dial only */
@@ -92,4 +92,67 @@ body:active {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Boost button — right panel, over efficiency plate */
+#boostBtn {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  left: auto;
+  width: 132px;
+  height: 26px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid rgba(79, 70, 229, 0.45);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(99, 102, 241, 0.95),
+    rgba(79, 70, 229, 0.92)
+  );
+  color: #faf7f1;
+  font: 700 11px/1 "Avenir Next", "Segoe UI", sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.2);
+  -webkit-app-region: no-drag;
+}
+
+#boostBtn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+#boostBtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+#boostBtn:disabled {
+  opacity: 0.72;
+  cursor: wait;
+  background: linear-gradient(
+    180deg,
+    rgba(120, 113, 108, 0.9),
+    rgba(87, 83, 78, 0.92)
+  );
+  border-color: rgba(68, 64, 60, 0.35);
+}
+
+#boostBtn.boost-done {
+  background: linear-gradient(
+    180deg,
+    rgba(16, 185, 129, 0.95),
+    rgba(5, 150, 105, 0.92)
+  );
+  border-color: rgba(4, 120, 87, 0.45);
+}
+
+#boostBtn.boost-error {
+  background: linear-gradient(
+    180deg,
+    rgba(239, 68, 68, 0.95),
+    rgba(185, 28, 28, 0.92)
+  );
+  border-color: rgba(153, 27, 27, 0.45);
 }

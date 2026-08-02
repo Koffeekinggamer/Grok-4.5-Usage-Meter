@@ -13,7 +13,8 @@ const END = (120 * Math.PI) / 180 - Math.PI / 2;
 const DIAL_SIZE = 200;
 const PANEL_W = 168;
 const TOTAL_W = DIAL_SIZE + PANEL_W;
-const TOTAL_H = 200;
+/** Extra strip under bars for project name + boost button */
+const TOTAL_H = 228;
 
 /**
  * @param {CanvasRenderingContext2D} ctx
@@ -205,7 +206,7 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
 
   const barLeft = x + 18;
   const barWidth = w - 56;
-  let by = y + 48;
+  let by = y + 46;
 
   for (const bar of bars) {
     const legend = bar?.legend || "?";
@@ -223,23 +224,23 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
     ctx.fillText(label, x + w - 20, by);
 
     // Track
-    const trackY = by + 12;
-    roundRect(ctx, barLeft, trackY, barWidth, 8, 4);
+    const trackY = by + 11;
+    roundRect(ctx, barLeft, trackY, barWidth, 7, 4);
     ctx.fillStyle = "rgba(68, 64, 60, 0.12)";
     ctx.fill();
 
     // Fill
     const fillW = Math.max(0, (barWidth * percent) / 100);
     if (fillW > 0) {
-      roundRect(ctx, barLeft, trackY, fillW, 8, 4);
+      roundRect(ctx, barLeft, trackY, fillW, 7, 4);
       ctx.fillStyle = color;
       ctx.fill();
     }
 
-    by += 36;
+    by += 32;
   }
 
-  // Project name
+  // Project name (boost button sits below in HTML)
   const project = efficiency?.project || "";
   ctx.fillStyle = "rgba(120, 113, 108, 0.95)";
   ctx.font = "600 9px 'Avenir Next', 'Segoe UI', sans-serif";
@@ -248,7 +249,7 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
   const maxChars = 22;
   const shown =
     project.length > maxChars ? `${project.slice(0, maxChars - 1)}…` : project;
-  ctx.fillText(shown, x + w / 2, y + h - 22);
+  ctx.fillText(shown, x + w / 2, y + h - 48);
 
   if (efficiency?.hasFault) {
     ctx.beginPath();

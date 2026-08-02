@@ -56,6 +56,10 @@ _Avoid_: Cache, stale data (as a product feature name)
 Efficiency always re-resolves the open project from Terminal Grok sessions so scores follow whichever project is currently open; plan usage keeps counting regardless.
 _Avoid_: Locked env project path as the default
 
+**Boost to 80%**:
+The efficiency-panel control that launches a carte-blanche Grok headless run to raise Architecture, Code efficiency, and UI perfection each to at least 80% for the open project.
+_Avoid_: Manual checklist, local lint-only fix
+
 **Fault state**:
 A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, no project, missing auth file).
 _Avoid_: Crash, error toast, dialog

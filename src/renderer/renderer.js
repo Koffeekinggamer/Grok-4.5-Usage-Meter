@@ -9,11 +9,13 @@ const legendEl = document.getElementById("legend");
 const legendCursorEl = document.getElementById("legendCursor");
 const legendOtherEl = document.getElementById("legendOther");
 const shellEl = document.getElementById("shell");
+const boostBtn = document.getElementById("boostBtn");
 
 let face = null;
 let cursorNeedle = { angle: -120, velocity: 0 };
 let otherNeedle = { angle: -120, velocity: 0 };
 let lastTs = performance.now();
+let boostBusy = false;
 
 function frame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000);
@@ -49,6 +51,32 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
+function applyBoostUi(boost) {
+  if (!boostBtn || !boost) return;
+  boostBtn.classList.remove("boost-done", "boost-error");
+  const status = boost.status || "idle";
+  if (status === "running") {
+    boostBusy = true;
+    boostBtn.disabled = true;
+    boostBtn.textContent = boost.label || "Building…";
+  } else if (status === "error") {
+    boostBusy = false;
+    boostBtn.disabled = false;
+    boostBtn.classList.add("boost-error");
+    boostBtn.textContent = boost.label || "Failed";
+  } else if (status === "done") {
+    boostBusy = false;
+    boostBtn.disabled = false;
+    boostBtn.classList.add("boost-done");
+    boostBtn.textContent = boost.label || "Launched";
+  } else {
+    boostBusy = false;
+    boostBtn.disabled = Boolean(boost.disabled);
+    boostBtn.textContent = boost.label || "↑ 80%";
+    if (boost.title) boostBtn.title = boost.title;
+  }
+}
+
 function applyFace(payload) {
   if (!payload?.cursor || !payload?.other) return;
   face = payload;
@@ -70,13 +98,24 @@ function applyFace(payload) {
   if (shellEl && payload.titleHint) {
     shellEl.title = payload.titleHint;
   }
+
+  if (payload.boost) applyBoostUi(payload.boost);
 }
 
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
 
+function isBoostTarget(el) {
+  return el === boostBtn || (el && boostBtn && boostBtn.contains(el));
+}
+
 window.addEventListener("pointerdown", (e) => {
+  if (isBoostTarget(e.target)) {
+    // Button handles its own click — do not drag the overlay.
+    e.stopPropagation();
+    return;
+  }
   dragging = true;
   lastX = e.screenX;
   lastY = e.screenY;
@@ -96,9 +135,43 @@ window.addEventListener("pointerup", () => {
   dragging = false;
 });
 
-window.addEventListener("dblclick", () => {
+window.addEventListener("dblclick", (e) => {
+  if (isBoostTarget(e.target)) return;
   window.tokenMeter?.refresh();
 });
+
+if (boostBtn) {
+  boostBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (boostBusy) return;
+    boostBusy = true;
+    boostBtn.disabled = true;
+    boostBtn.textContent = "Starting…";
+    try {
+      const result = await window.tokenMeter?.boostToEighty?.();
+      if (result?.ok) {
+        boostBtn.classList.add("boost-done");
+        boostBtn.textContent = "Grok building";
+        boostBtn.title = result.logFile
+          ? `Grok launched (pid ${result.pid}). Log: ${result.logFile}`
+          : `Grok launched (pid ${result.pid})`;
+      } else {
+        boostBtn.classList.add("boost-error");
+        boostBtn.textContent = "Failed";
+        boostBtn.disabled = false;
+        boostBusy = false;
+        boostBtn.title = result?.error || "Boost failed";
+      }
+    } catch (err) {
+      boostBtn.classList.add("boost-error");
+      boostBtn.textContent = "Failed";
+      boostBtn.disabled = false;
+      boostBusy = false;
+      boostBtn.title = err instanceof Error ? err.message : String(err);
+    }
+  });
+}
 
 window.tokenMeter?.onFaceUpdate?.(applyFace);
 requestAnimationFrame(frame);

@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld("tokenMeter", {
   refresh() {
     return ipcRenderer.invoke("usage:refresh");
   },
+  boostToEighty() {
+    return ipcRenderer.invoke("efficiency:boost");
+  },
   dragBy(dx, dy) {
     ipcRenderer.send("window:drag", { dx, dy });
   },
