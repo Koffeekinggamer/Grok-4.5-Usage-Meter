@@ -46,20 +46,21 @@ contextBridge.exposeInMainWorld("tokenMeter", {
     applyProjectToFields(opts) {
       return ipcRenderer.invoke("bml:applyProjectToFields", opts || {});
     },
-    createExperiment(fields) {
-      return ipcRenderer.invoke("bml:createExperiment", fields);
-    },
     selectExperiment(issueRef) {
       return ipcRenderer.invoke("bml:selectExperiment", issueRef);
     },
     refreshBoard() {
       return ipcRenderer.invoke("bml:refreshBoard");
     },
-    advanceStage() {
-      return ipcRenderer.invoke("bml:advanceStage");
+    advanceStage(payload) {
+      return ipcRenderer.invoke("bml:advanceStage", payload || {});
     },
     runSkillStep() {
+      // Full chain auto-run
       return ipcRenderer.invoke("bml:runSkillStep");
+    },
+    runOneSkillStep(index) {
+      return ipcRenderer.invoke("bml:runOneSkillStep", index);
     },
     nextSkillStep() {
       return ipcRenderer.invoke("bml:nextSkillStep");

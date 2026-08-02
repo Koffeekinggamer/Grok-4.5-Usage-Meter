@@ -12,9 +12,11 @@ const {
   reduceBmlState,
 } = require("./state");
 const {
+  SKILL_CHAIN,
   stepAt,
   nextStepIndex,
   canSkipStep,
+  tinyImplementIndex,
   buildSkillPrompt,
   isMeasureAllowedCommand,
   buildMeasureInstrumentPrompt,
@@ -27,7 +29,7 @@ const { createGithubClient } = require("./github");
 const {
   loadActiveProjectContext,
   formatProjectContextForPrompt,
-  suggestTechnicalContext,
+  synthesizeTicketFromProject,
 } = require("./project-context");
 
 /**
@@ -79,7 +81,66 @@ function createBmlCoach(opts = {}) {
     };
   }
 
+  function activeProject() {
+    return loadActiveProjectContext({
+      preferCwd: process.env.GUM_BML_CWD || null,
+    });
+  }
+
+  /**
+   * The active chat project IS the experiment. Bind issue + synthesize
+   * Build/Measure from that repo whenever the chat project changes.
+   * Mutates `state` via reduce (no dispatch) to avoid getView recursion.
+   */
+  function ensureExperimentFromChatProject() {
+    let project;
+    try {
+      project = activeProject();
+    } catch {
+      return null;
+    }
+    if (!project?.cwd) return project;
+
+    const title = `BML: ${project.name || project.cwd}`;
+    const cwdKey = project.cwd;
+    const sameProject =
+      state.activeIssue &&
+      (state.activeIssue.title === title ||
+        state.activeIssue.repo === cwdKey ||
+        (state.fields?.technicalContext || "").includes(cwdKey));
+
+    if (!sameProject || !state.activeIssue) {
+      const fields = synthesizeTicketFromProject(project);
+      state = reduceBmlState(state, {
+        type: "experiment/set",
+        issue: {
+          number: 0,
+          url: "",
+          title,
+          repo: cwdKey,
+          itemId: null,
+        },
+        stage: state.stage === "Done" ? "Backlog" : state.stage,
+        fields,
+      });
+      state = reduceBmlState(state, {
+        type: "build/flags",
+        measurePathNamed: true,
+      });
+      persist();
+    } else if (!state.fields || !String(state.fields.hypothesis || "").trim()) {
+      state = reduceBmlState(state, {
+        type: "fields/set",
+        fields: synthesizeTicketFromProject(project),
+      });
+      persist();
+    }
+
+    return project;
+  }
+
   function getView() {
+    const project = ensureExperimentFromChatProject();
     const step = stepAt(state.buildStepIndex);
     const nxt = nextStage(state.stage);
     const advanceCheck = nxt
@@ -87,20 +148,16 @@ function createBmlCoach(opts = {}) {
       : { ok: false, errors: ["Already Done."] };
 
     const chain = resolveChainForView();
-    let project = null;
-    try {
-      project = loadActiveProjectContext({
-        preferCwd: process.env.GUM_BML_CWD || null,
-      });
-    } catch {
-      project = null;
-    }
 
     return {
       ...state,
       skillChain: chain.map((s, i) => ({
         ...s,
-        active: i === state.buildStepIndex,
+        // buildStepIndex points at current step while running; after a step
+        // finishes the coach advances index so completed rows get done=true
+        active:
+          i === state.buildStepIndex &&
+          state.buildStepIndex < SKILL_CHAIN.length,
         done: i < state.buildStepIndex,
       })),
       currentStep: step
@@ -118,12 +175,16 @@ function createBmlCoach(opts = {}) {
       jobBrief:
         state.fields?.hypothesis ||
         state.activeIssue?.title ||
+        project?.name ||
         null,
       project: project
         ? {
             cwd: project.cwd,
             name: project.name,
             sessionId: project.sessionId,
+            sessionLive: project.sessionLive,
+            sessionSource: project.sessionSource,
+            boundToChat: project.boundToChat,
             buildNatures: project.buildNatures,
             measureNatures: project.measureNatures,
             technicalHints: project.technicalHints,
@@ -132,12 +193,6 @@ function createBmlCoach(opts = {}) {
           }
         : null,
     };
-  }
-
-  function activeProject() {
-    return loadActiveProjectContext({
-      preferCwd: process.env.GUM_BML_CWD || null,
-    });
   }
 
   function projectPromptBlock() {
@@ -281,11 +336,89 @@ function createBmlCoach(opts = {}) {
       }
     },
 
-    async advanceStage() {
+    /**
+     * Advance the BML stage — primary way to put AI-generated Build/Measure
+     * into practice (no separate GitHub create).
+     *
+     * Backlog → Build: validates ticket fields, commits them as the local
+     * experiment, moves to Build, then auto-runs the Matt skill chain.
+     *
+     * @param {{
+     *   fields?: import('./template').TicketFields|null,
+     *   onProgress?: (view: object) => void,
+     *   skipChain?: boolean,
+     * }} [opts]
+     */
+    async advanceStage(opts = {}) {
+      if (opts.fields) {
+        dispatch({ type: "fields/set", fields: opts.fields });
+      }
+
       const nxt = nextStage(state.stage);
       if (!nxt) {
         return dispatch({ type: "error", message: "Already Done." });
       }
+
+      // Active chat project = experiment. Synthesize ticket if needed, then Build.
+      if (state.stage === "Backlog" && nxt === "Build") {
+        ensureExperimentFromChatProject();
+        let fields = opts.fields || state.fields;
+        if (!fields || !validateBacklogReady(fields).ok) {
+          const project = activeProject();
+          fields = synthesizeTicketFromProject(project);
+          dispatch({ type: "fields/set", fields });
+        }
+        const ready = validateBacklogReady(fields || {});
+        if (!ready.ok) {
+          return dispatch({
+            type: "error",
+            message: ready.errors.join(" "),
+          });
+        }
+
+        const project = activeProject();
+        const title = `BML: ${project.name || project.cwd}`;
+        dispatch({
+          type: "experiment/set",
+          issue: {
+            number: 0,
+            url: "",
+            title,
+            repo: project.cwd || "",
+            itemId: null,
+          },
+          stage: "Backlog",
+          fields,
+        });
+
+        const check = canAdvanceStage("Backlog", "Build", {
+          ...gateContext(),
+          fields,
+          hasExperimentLabel: true,
+        });
+        if (!check.ok) {
+          return dispatch({
+            type: "error",
+            message: check.errors.join(" "),
+          });
+        }
+
+        dispatch({ type: "stage/set", stage: "Build" });
+        dispatch({ type: "build/step", index: 0 });
+        dispatch({
+          type: "build/flags",
+          measurePathNamed: true,
+        });
+        dispatch({ type: "error", message: null });
+
+        if (!opts.skipChain) {
+          return this.runAllSkillSteps({
+            onProgress: opts.onProgress,
+          });
+        }
+        return getView();
+      }
+
       const check = canAdvanceStage(state.stage, nxt, gateContext());
       if (!check.ok) {
         return dispatch({
@@ -298,7 +431,17 @@ function createBmlCoach(opts = {}) {
       return getView();
     },
 
-    async runSkillStep() {
+    /**
+     * Run a single skill at `index` (defaults to current buildStepIndex).
+     * @param {number} [index]
+     */
+    async runSkillStep(index) {
+      const i =
+        Number.isInteger(index) && index >= 0
+          ? index
+          : state.buildStepIndex;
+      dispatch({ type: "build/step", index: i });
+
       const project = activeProject();
       const preferCwd = process.env.GUM_BML_CWD || project.cwd || process.cwd();
       const projectBlock = formatProjectContextForPrompt(project);
@@ -311,8 +454,10 @@ function createBmlCoach(opts = {}) {
         .filter(Boolean)
         .join(" — ");
 
+      const step = stepAt(i) || stepAt(0);
+      const chainPos = `Chain step ${i + 1}/${SKILL_CHAIN.length}: ${step?.command || "?"}`;
+
       if (state.stage === "Measure") {
-        const step = stepAt(state.buildStepIndex);
         const cmd = step?.command || "/implement";
         if (!isMeasureAllowedCommand(cmd) && !state.tinyBuild) {
           const built = buildMeasureInstrumentPrompt({
@@ -320,23 +465,23 @@ function createBmlCoach(opts = {}) {
             metricLine: state.fields?.measure,
             jobBrief,
           });
-          // Prepend project measure natures even on instrument path
           const prompt = [
             built.prompt,
             "",
             projectBlock,
             "",
             "MEASURE: only collect pre-registered metrics for THIS project.",
+            chainPos,
           ].join("\n");
           return this._inject(prompt, {
             skillPath: built.skillPath,
             skillOk: built.skillOk,
             preferCwd,
+            chainPos,
           });
         }
       }
 
-      const step = stepAt(state.buildStepIndex) || stepAt(0);
       const built = buildSkillPrompt(step, {
         issueUrl: state.activeIssue?.url,
         issueTitle: state.activeIssue?.title,
@@ -345,6 +490,11 @@ function createBmlCoach(opts = {}) {
         jobBrief,
         cwd: preferCwd,
         projectBlock,
+        extra: [
+          chainPos,
+          "You are one step in an auto-run BML skill chain. Complete THIS skill fully before stopping.",
+          "Do not skip ahead to later chain steps — the coach will invoke those next.",
+        ].join("\n"),
       });
       if (!built.skillOk) {
         dispatch({
@@ -358,47 +508,158 @@ function createBmlCoach(opts = {}) {
         skillPath: built.skillPath,
         skillOk: built.skillOk,
         preferCwd,
+        chainPos,
       });
     },
 
     /**
-     * Prefill ticket fields from active project (Build/Measure natures + @hints).
-     * Does not overwrite non-empty user fields unless `force`.
+     * Bind active chat project as experiment, then auto-run every Matt skill
+     * in order (1…N). Publishes progress via onProgress after each step.
+     * @param {{ onProgress?: (view: object) => void }} [opts]
+     */
+    async runAllSkillSteps(opts = {}) {
+      const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+
+      // Active chat project = experiment; synthesize Build/Measure from that repo
+      ensureExperimentFromChatProject();
+      const project = activeProject();
+      const fields =
+        state.fields && validateBacklogReady(state.fields).ok
+          ? state.fields
+          : synthesizeTicketFromProject(project);
+      dispatch({ type: "fields/set", fields });
+      dispatch({
+        type: "experiment/set",
+        issue: {
+          number: 0,
+          url: "",
+          title: `BML: ${project.name || project.cwd}`,
+          repo: project.cwd || "",
+          itemId: null,
+        },
+        stage: "Build",
+        fields,
+      });
+      dispatch({ type: "stage/set", stage: "Build" });
+      dispatch({ type: "build/flags", measurePathNamed: true });
+      // Always full chain (no tiny-build shortcut)
+      state = reduceBmlState(state, {
+        type: "build/step",
+        index: 0,
+      });
+      // Clear tiny flag if set
+      if (state.tinyBuild) {
+        state = { ...state, tinyBuild: false };
+        persist();
+      }
+
+      const start = 0;
+      const last = SKILL_CHAIN.length - 1;
+
+      // Clear prior strikethrough so progress starts fresh
+      dispatch({ type: "build/step", index: 0 });
+      dispatch({ type: "error", message: null });
+      dispatch({
+        type: "inject/result",
+        ok: true,
+        method: "chain",
+        detail: `Auto-running all ${SKILL_CHAIN.length} Matt skills on ${project.name || project.cwd}…`,
+      });
+      if (onProgress) onProgress(getView());
+
+      /** @type {{ index: number, command: string, ok: boolean }[]} */
+      const results = [];
+
+      for (let i = start; i <= last; i++) {
+        // Active = current skill (not yet struck)
+        dispatch({ type: "build/step", index: i });
+        if (onProgress) onProgress(getView());
+
+        try {
+          await this.runSkillStep(i);
+        } catch (err) {
+          dispatch({
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        const step = stepAt(i);
+        results.push({
+          index: i,
+          command: step?.command || `step-${i}`,
+          ok: Boolean(state.lastInject?.ok),
+        });
+
+        // Mark this skill completed → strikethrough (done: i < index)
+        dispatch({ type: "build/step", index: i + 1 });
+        if (onProgress) onProgress(getView());
+      }
+
+      // All 1–13 struck through briefly, then reset to normal text
+      dispatch({ type: "build/step", index: SKILL_CHAIN.length });
+      if (onProgress) onProgress(getView());
+
+      const okCount = results.filter((r) => r.ok).length;
+      const summary = results
+        .map((r) => `${r.command}:${r.ok ? "ok" : "fail"}`)
+        .join(" · ");
+      dispatch({
+        type: "inject/result",
+        ok: okCount === results.length,
+        method: "chain",
+        detail: `Chain done ${okCount}/${results.length}. ${summary}`,
+      });
+      if (okCount < results.length) {
+        dispatch({
+          type: "error",
+          message: `Some skills failed inject (${okCount}/${results.length}).`,
+        });
+      } else {
+        dispatch({ type: "error", message: null });
+      }
+
+      // Auto-reset strikethrough to normal text after full run
+      await new Promise((r) => setTimeout(r, 600));
+      dispatch({ type: "build/step", index: 0 });
+      if (onProgress) onProgress(getView());
+
+      return getView();
+    },
+
+    /**
+     * Prefill ticket fields from active project using synthesized Build/Measure
+     * natures (CONTEXT.md + package + tree). Overwrites when `force`.
      * @param {{ force?: boolean }} [opts]
      */
     applyProjectToFields(opts = {}) {
       const project = activeProject();
       const force = Boolean(opts.force);
+      const synthesized = synthesizeTicketFromProject(project);
       const prev = state.fields || { ...EMPTY_FIELDS };
+      /** @type {import('./template').TicketFields} */
       const next = { ...prev };
 
-      if (force || !String(next.build || "").trim()) {
-        next.build = [
-          `In ${project.name || project.cwd}:`,
-          ...project.buildNatures.slice(0, 4).map((n) => `- ${n}`),
-        ].join("\n");
-      }
-      if (force || !String(next.measure || "").trim()) {
-        next.measure = [
-          ...project.measureNatures.slice(0, 3).map((n) => `- ${n}`),
-          "Pass: [set numeric] · kill: [set numeric] · duration: [e.g. 2 weeks]",
-        ].join("\n");
-      }
-      if (force || !String(next.technicalContext || "").trim()) {
-        next.technicalContext = suggestTechnicalContext(project);
-      }
-      if (force || !String(next.hypothesis || "").trim()) {
-        next.hypothesis = project.description
-          ? `For ${project.name}: ${project.description} — the riskiest assumption we must validate is…`
-          : `For project ${project.name || project.cwd}, the riskiest assumption is…`;
+      for (const key of Object.keys(synthesized)) {
+        const k = /** @type {keyof typeof synthesized} */ (key);
+        if (force || !String(next[k] || "").trim()) {
+          next[k] = synthesized[k];
+        }
       }
 
-      return dispatch({ type: "fields/set", fields: next });
+      dispatch({ type: "fields/set", fields: next });
+      dispatch({ type: "error", message: null });
+      // Reset chain to grill after fill so admin can run main flow
+      if (force) {
+        dispatch({ type: "build/step", index: 0 });
+        dispatch({ type: "stage/set", stage: "Backlog" });
+      }
+      return getView();
     },
 
     /**
      * @param {string} prompt
-     * @param {{ skillPath?: string|null, skillOk?: boolean, preferCwd?: string }} [meta]
+     * @param {{ skillPath?: string|null, skillOk?: boolean, preferCwd?: string, chainPos?: string }} [meta]
      */
     async _inject(prompt, meta = {}) {
       try {
@@ -414,11 +675,12 @@ function createBmlCoach(opts = {}) {
             ? " skill=MISSING"
             : "";
         const projNote = ` project=${preferCwd}`;
+        const chainNote = meta.chainPos ? ` ${meta.chainPos}` : "";
         dispatch({
           type: "inject/result",
           ok: result.ok,
           method: result.method,
-          detail: `${result.detail || ""}${skillNote}${projNote}`.trim(),
+          detail: `${result.detail || ""}${skillNote}${projNote}${chainNote}`.trim(),
         });
         return getView();
       } catch (err) {

@@ -11,13 +11,7 @@ const shellEl = document.getElementById("shell");
 
 const bmlBtn = document.getElementById("bmlBtn");
 const bmlPanel = document.getElementById("bmlPanel");
-const bmlStageChip = document.getElementById("bmlStageChip");
-const bmlStage = document.getElementById("bmlStage");
-const bmlIssue = document.getElementById("bmlIssue");
 const bmlWip = document.getElementById("bmlWip");
-const bmlError = document.getElementById("bmlError");
-const bmlStatus = document.getElementById("bmlStatus");
-const bmlGate = document.getElementById("bmlGate");
 const bmlChain = document.getElementById("bmlChain");
 const mNotes = document.getElementById("mNotes");
 
@@ -154,17 +148,6 @@ function applyFace(payload) {
   }
 }
 
-function readFieldsFromForm() {
-  return {
-    hypothesis: document.getElementById("fHypothesis").value,
-    build: document.getElementById("fBuild").value,
-    measure: document.getElementById("fMeasure").value,
-    learn: "",
-    acceptanceCriteria: document.getElementById("fAC").value,
-    technicalContext: document.getElementById("fTech").value,
-  };
-}
-
 function applyBml(view) {
   if (!view) return;
   bml = view;
@@ -174,126 +157,54 @@ function applyBml(view) {
   bmlBtn.classList.toggle("active", Boolean(view.panelOpen));
   bmlBtn.setAttribute("aria-expanded", view.panelOpen ? "true" : "false");
 
-  if (view.stage) {
-    bmlStage.textContent = view.stage;
-    bmlStageChip.hidden = false;
-    bmlStageChip.textContent = view.stage;
+  if (view.wipActive != null && bmlWip) {
+    bmlWip.textContent = "";
+  } else if (bmlWip) {
+    bmlWip.textContent = "";
   }
-
-  if (view.activeIssue) {
-    bmlIssue.textContent = "";
-    const link = document.createElement("button");
-    link.type = "button";
-    link.className = "btn ghost xs";
-    link.textContent = `#${view.activeIssue.number}`;
-    link.title = view.activeIssue.url;
-    link.addEventListener("click", (e) => {
-      e.stopPropagation();
-      bmlApi()?.openUrl(view.activeIssue.url);
-    });
-    bmlIssue.appendChild(link);
-    bmlIssue.appendChild(
-      document.createTextNode(" " + view.activeIssue.title)
-    );
-  } else {
-    bmlIssue.textContent = "No experiment selected — create one below";
-  }
-
-  if (view.wipActive != null) {
-    bmlWip.textContent = `WIP ${view.wipActive}/${view.wipLimit}`;
-  } else {
-    bmlWip.textContent = `WIP ?/${view.wipLimit || 3}`;
-  }
-
-  if (view.lastError) {
-    bmlError.hidden = false;
-    bmlError.textContent = view.lastError;
-  } else {
-    bmlError.hidden = true;
-    bmlError.textContent = "";
-  }
-
-  if (view.lastInject?.detail) {
-    bmlStatus.hidden = false;
-    bmlStatus.textContent = `${view.lastInject.ok ? "✓" : "…"} ${view.lastInject.method}: ${view.lastInject.detail}`;
-  } else {
-    bmlStatus.hidden = true;
-  }
-
-  if (view.canAdvance) {
-    bmlGate.textContent = view.nextStage
-      ? `Ready to move → ${view.nextStage}`
-      : "";
-  } else {
-    bmlGate.textContent = (view.advanceErrors || []).join(" · ");
-  }
-
-  const projEl = document.getElementById("bmlProject");
-  if (projEl) {
-    if (view.project?.cwd) {
-      const short = view.project.cwd.replace(/^.*?([^/]+)$/, "$1");
-      projEl.textContent = `Active project: ${view.project.name || short} · ${view.project.cwd}${
-        view.project.hasContextMd ? " · CONTEXT.md" : ""
-      }`;
-      projEl.title = [
-        ...(view.project.buildNatures || []).map((n) => `Build: ${n}`),
-        ...(view.project.measureNatures || []).map((n) => `Measure: ${n}`),
-      ].join("\n");
-    } else {
-      projEl.textContent = "Active project: (none — open Grok in a repo)";
-      projEl.title = "";
-    }
-  }
-
-  
 
   bmlChain.innerHTML = "";
-  for (const step of view.skillChain || []) {
+  const steps = view.skillChain || [];
+  steps.forEach((step, i) => {
     const li = document.createElement("li");
     const skillMark = step.skillOk === false ? " ⚠" : step.skillOk ? " ✓" : "";
-    li.textContent = `${step.command} — ${step.label}${skillMark}`;
+    li.textContent = `${i + 1}. ${step.command} — ${step.label}${skillMark}`;
     if (step.active) li.classList.add("active");
+    // Strikethrough as each task completes (done flag from coach)
     if (step.done) li.classList.add("done");
     li.title = [
       step.role,
       step.phase ? `phase: ${step.phase}` : null,
+      step.done ? "completed" : step.active ? "running" : "pending",
       step.skillPath || (step.skillOk === false ? "SKILL.md missing" : null),
     ]
       .filter(Boolean)
       .join("\n");
     bmlChain.appendChild(li);
+  });
+
+  const mDuration = document.getElementById("mDuration");
+  const mKill = document.getElementById("mKill");
+  if (mDuration) mDuration.checked = Boolean(view.measure?.durationElapsed);
+  if (mKill) mKill.checked = Boolean(view.measure?.killHit);
+
+  if (mNotes) {
+    mNotes.innerHTML = "";
+    for (const n of view.measure?.weekNotes || []) {
+      const li = document.createElement("li");
+      li.textContent = `${n.value ? n.value + " — " : ""}${n.text}`;
+      mNotes.appendChild(li);
+    }
   }
 
-  document.getElementById("bmlSkip").disabled = !view.canSkipCurrent;
-  document.getElementById("bmlShipped").checked = Boolean(
-    view.build?.smallestTestShipped
-  );
-  document.getElementById("bmlMeasurePath").checked = Boolean(
-    view.build?.measurePathNamed
-  );
-  document.getElementById("mDuration").checked = Boolean(
-    view.measure?.durationElapsed
-  );
-  document.getElementById("mKill").checked = Boolean(view.measure?.killHit);
-
-  mNotes.innerHTML = "";
-  for (const n of view.measure?.weekNotes || []) {
-    const li = document.createElement("li");
-    li.textContent = `${n.value ? n.value + " — " : ""}${n.text}`;
-    mNotes.appendChild(li);
-  }
-
+  // Build/skill UI always available; Measure/Learn only when those stages
   const stage = view.stage || "Backlog";
-  document.getElementById("bmlCreateSection").hidden = Boolean(
-    view.activeIssue
-  );
-  document.getElementById("bmlBuildSection").hidden = !(
-    stage === "Build" || stage === "Backlog"
-  );
-  document.getElementById("bmlMeasureSection").hidden = stage !== "Measure";
-  document.getElementById("bmlLearnSection").hidden = !(
-    stage === "Learn" || stage === "Done"
-  );
+  const buildSec = document.getElementById("bmlBuildSection");
+  const measureSec = document.getElementById("bmlMeasureSection");
+  const learnSec = document.getElementById("bmlLearnSection");
+  if (buildSec) buildSec.hidden = false;
+  if (measureSec) measureSec.hidden = stage !== "Measure";
+  if (learnSec) learnSec.hidden = !(stage === "Learn" || stage === "Done");
 }
 
 // —— Meter drag (ignore interactive BML chrome) ——
@@ -364,66 +275,25 @@ bmlPanel?.addEventListener("pointerdown", (e) => {
   e.stopPropagation();
 });
 
-document.getElementById("bmlRefresh")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.refreshBoard());
-});
-
-document.getElementById("bmlAdvance")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.advanceStage());
-});
-
-document.getElementById("bmlCreate")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.createExperiment(readFieldsFromForm()));
-});
-
-document
-  .getElementById("bmlFromProject")
-  ?.addEventListener("click", async () => {
-    const view = await bmlApi()?.applyProjectToFields({ force: true });
-    applyBml(view);
-    if (view?.fields) {
-      const set = (id, val) => {
-        const el = document.getElementById(id);
-        if (el && val != null) el.value = val;
-      };
-      set("fHypothesis", view.fields.hypothesis);
-      set("fBuild", view.fields.build);
-      set("fMeasure", view.fields.measure);
-      set("fAC", view.fields.acceptanceCriteria);
-      set("fTech", view.fields.technicalContext);
-    }
-  });
-
 document.getElementById("bmlRun")?.addEventListener("click", async () => {
-  await bmlApi()?.setFields(readFieldsFromForm());
-  applyBml(await bmlApi()?.runSkillStep());
+  const btn = document.getElementById("bmlRun");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Running all skills…";
+  }
+  try {
+    // Binds chat project as experiment + auto-runs all Matt skills in order
+    const view = await bmlApi()?.runSkillStep();
+    applyBml(view);
+  } catch (err) {
+    console.error("BML chain run failed", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Run all → Grok";
+    }
+  }
 });
-
-document.getElementById("bmlNext")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.nextSkillStep());
-});
-
-document.getElementById("bmlSkip")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.skipOptionalStep());
-});
-
-document.getElementById("bmlTiny")?.addEventListener("click", async () => {
-  applyBml(await bmlApi()?.setTinyBuild());
-});
-
-document.getElementById("bmlShipped")?.addEventListener("change", async (e) => {
-  applyBml(
-    await bmlApi()?.setBuildFlags({ smallestTestShipped: e.target.checked })
-  );
-});
-
-document
-  .getElementById("bmlMeasurePath")
-  ?.addEventListener("change", async (e) => {
-    applyBml(
-      await bmlApi()?.setBuildFlags({ measurePathNamed: e.target.checked })
-    );
-  });
 
 document.getElementById("mDuration")?.addEventListener("change", async (e) => {
   applyBml(
@@ -440,8 +310,8 @@ document
   ?.addEventListener("click", async () => {
     applyBml(
       await bmlApi()?.postMeasure({
-        text: document.getElementById("mText").value,
-        value: document.getElementById("mValue").value,
+        text: document.getElementById("mText")?.value,
+        value: document.getElementById("mValue")?.value,
       })
     );
   });
@@ -451,7 +321,7 @@ for (const btn of document.querySelectorAll("[data-learn]")) {
     applyBml(
       await bmlApi()?.recordLearn({
         decision: btn.getAttribute("data-learn"),
-        evidence: document.getElementById("learnEvidence").value,
+        evidence: document.getElementById("learnEvidence")?.value,
       })
     );
   });
@@ -470,7 +340,6 @@ window.tokenMeter?.getFace?.()
     if (f) applyFace(f);
   })
   .catch((err) => console.error("getFace failed", err));
-// Force a refresh so numbers update even if first push was lost.
 window.tokenMeter?.refresh?.()
   .then((f) => {
     if (f) applyFace(f);

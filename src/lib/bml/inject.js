@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { spawn } = require("child_process");
-const { listActiveSessions, pickActiveSession } = require("./active-session");
+const { resolveChatSession } = require("./active-session");
 const { getGrokHome } = require("../paths");
 
 /**
@@ -158,8 +158,7 @@ async function copyPromptToClipboard(prompt, opts = {}) {
  * @param {{
  *   preferCwd?: string|null,
  *   env?: NodeJS.ProcessEnv,
- *   listSessions?: typeof listActiveSessions,
- *   pickSession?: typeof pickActiveSession,
+ *   resolveSession?: typeof resolveChatSession,
  *   runCommand?: typeof runCommand,
  *   copyPrompt?: typeof copyPromptToClipboard,
  *   spawnImpl?: typeof spawn,
@@ -169,8 +168,7 @@ async function copyPromptToClipboard(prompt, opts = {}) {
  */
 async function injectIntoGrok(prompt, opts = {}) {
   const env = opts.env ?? process.env;
-  const list = opts.listSessions || listActiveSessions;
-  const pick = opts.pickSession || pickActiveSession;
+  const resolve = opts.resolveSession || resolveChatSession;
   const run = opts.runCommand || runCommand;
   const copy = opts.copyPrompt || copyPromptToClipboard;
   const yolo =
@@ -178,8 +176,11 @@ async function injectIntoGrok(prompt, opts = {}) {
     env.GUM_BML_YOLO === "1" ||
     env.GUM_BML_YOLO === "true";
 
-  const sessions = list({ env });
-  const session = pick(sessions, { preferCwd: opts.preferCwd });
+  // Always bind inject to the active chat project when possible
+  const session = resolve({
+    env,
+    preferCwd: opts.preferCwd || env.GUM_BML_CWD || null,
+  });
   const grokBin = resolveGrokBin({ env });
   const cwd = session?.cwd || opts.preferCwd || process.cwd();
 

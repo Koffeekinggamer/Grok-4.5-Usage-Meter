@@ -52,6 +52,6 @@ _Avoid_: Vague feature request, unlabelled backlog card
 One ordered Build-column command in the coach chain. Inject embeds the installed Matt/Grok `SKILL.md` body (from `~/.grok/vendor/mattpocock-skills` or bundled skills). Main flow: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement`. On-ramps for any admin job: `/ask-matt`, `/triage`, `/diagnosing-bugs`, `/research`, `/wayfinder`, `/improve-codebase-architecture`, `/prototype`, `/design`, then close with `/code-review`.
 _Avoid_: Ad-hoc prompt, random slash command, paraphrased skill instructions
 
-**Active project**:
-The Terminal Grok session working directory (from `~/.grok/active_sessions.json`), used as the source of truth for BML **Build nature** and **Measure nature** (package scripts, `CONTEXT.md`, tree, remotes).
-_Avoid_: Generic templates disconnected from the repo under the needles
+**Active chat project**:
+The working directory of the Terminal Grok **chat session** currently active for BML (`active_sessions.json` live pid first, else freshest `~/.grok/sessions` tree entry). All experiment Build/Measure planning and Grok inject use this cwd — not the Meter app process directory.
+_Avoid_: Meter install path as default project, generic templates, wrong multi-session cwd

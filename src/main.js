@@ -256,12 +256,6 @@ function registerBmlIpc() {
     return view;
   });
 
-  ipcMain.handle("bml:createExperiment", async (_e, fields) => {
-    const view = await bmlCoach.createExperiment(fields);
-    publishBml(view);
-    return view;
-  });
-
   ipcMain.handle("bml:selectExperiment", async (_e, issueRef) => {
     const view = await bmlCoach.selectExperiment(issueRef);
     publishBml(view);
@@ -274,14 +268,27 @@ function registerBmlIpc() {
     return view;
   });
 
-  ipcMain.handle("bml:advanceStage", async () => {
-    const view = await bmlCoach.advanceStage();
+  ipcMain.handle("bml:advanceStage", async (_e, payload) => {
+    const view = await bmlCoach.advanceStage({
+      fields: payload?.fields || null,
+      skipChain: Boolean(payload?.skipChain),
+      onProgress: (v) => publishBml(v),
+    });
     publishBml(view);
     return view;
   });
 
   ipcMain.handle("bml:runSkillStep", async () => {
-    const view = await bmlCoach.runSkillStep();
+    // Run = auto-run full Matt skill chain (or tiny: implement only).
+    const view = await bmlCoach.runAllSkillSteps({
+      onProgress: (v) => publishBml(v),
+    });
+    publishBml(view);
+    return view;
+  });
+
+  ipcMain.handle("bml:runOneSkillStep", async (_e, index) => {
+    const view = await bmlCoach.runSkillStep(index);
     publishBml(view);
     return view;
   });

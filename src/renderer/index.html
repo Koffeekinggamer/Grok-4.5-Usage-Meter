@@ -31,110 +31,39 @@
           <button
             type="button"
             id="bmlBtn"
-            title="Build-Measure-Learn coach"
+            title="BML Process (active chat project = experiment)"
             aria-expanded="false"
             aria-controls="bmlPanel"
           >
             BML
           </button>
-          <span id="bmlStageChip" class="chip" hidden></span>
         </div>
       </div>
 
       <div id="bmlPanel" hidden>
         <header class="bml-head">
-          <strong>BML coach</strong>
+          <strong>BML Process</strong>
           <span id="bmlWip" class="muted"></span>
         </header>
 
-        <p id="bmlError" class="bml-error" hidden></p>
-        <p id="bmlStatus" class="bml-status" hidden></p>
-
-        <section class="bml-section">
-          <div class="row">
-            <label class="muted">Stage</label>
-            <span id="bmlStage" class="pill">Backlog</span>
-          </div>
-          <div id="bmlIssue" class="issue muted">No experiment selected</div>
-          <div class="btn-row">
-            <button type="button" id="bmlRefresh" class="btn ghost">
-              Refresh WIP
-            </button>
-            <button type="button" id="bmlAdvance" class="btn">
-              Advance stage
-            </button>
-          </div>
-          <p id="bmlGate" class="muted small"></p>
-        </section>
-
-        <section class="bml-section" id="bmlCreateSection">
-          <div class="row">
-            <strong class="small">New admin job / experiment</strong>
-          </div>
-          <p id="bmlProject" class="muted small"></p>
-          <div class="btn-row">
-            <button type="button" id="bmlFromProject" class="btn ghost">
-              Fill Build/Measure from project
-            </button>
-          </div>
-          <textarea
-            id="fHypothesis"
-            rows="2"
-            placeholder="Hypothesis — what must be true for this admin job?"
-          ></textarea>
-          <textarea
-            id="fBuild"
-            rows="2"
-            placeholder="Build — smallest change/process to test it"
-          ></textarea>
-          <textarea
-            id="fMeasure"
-            rows="2"
-            placeholder="Measure — ≥pass · kill <N · duration"
-          ></textarea>
-          <textarea
-            id="fAC"
-            rows="2"
-            placeholder="Acceptance Criteria (observable Build done)"
-          ></textarea>
-          <textarea
-            id="fTech"
-            rows="1"
-            placeholder="Technical Context @folders @SOPs"
-          ></textarea>
-          <div class="btn-row">
-            <button type="button" id="bmlCreate" class="btn primary">
-              Create on GitHub
-            </button>
-          </div>
-        </section>
-
         <section class="bml-section" id="bmlBuildSection">
           <div class="row">
-            <strong class="small">Matt skill chain (installed SKILL.md)</strong>
-            <button type="button" id="bmlTiny" class="btn ghost xs">
-              Tiny build
-            </button>
+            <strong class="small">Matt skill chain</strong>
           </div>
           <p class="muted small" id="bmlChainHint">
-            ✓ = SKILL.md found · Skip optional on-ramps · Run embeds full skill body
+            Experiment = active chat project. Runs every Matt skill in order.
           </p>
           <ol id="bmlChain" class="chain"></ol>
           <div class="btn-row">
-            <button type="button" id="bmlRun" class="btn primary">
-              Run step → Grok
+            <button
+              type="button"
+              id="bmlRun"
+              class="btn primary"
+              title="Bind active chat project and auto-run all Matt skills in order"
+            >
+              Run all → Grok
             </button>
-            <button type="button" id="bmlSkip" class="btn ghost">Skip</button>
-            <button type="button" id="bmlNext" class="btn ghost">Next</button>
           </div>
-          <label class="check">
-            <input type="checkbox" id="bmlShipped" />
-            Smallest test shipped
-          </label>
-          <label class="check">
-            <input type="checkbox" id="bmlMeasurePath" />
-            Measure path named
-          </label>
         </section>
 
         <section class="bml-section" id="bmlMeasureSection">

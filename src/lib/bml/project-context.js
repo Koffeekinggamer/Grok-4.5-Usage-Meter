@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { listActiveSessions, pickActiveSession } = require("./active-session");
+const { resolveChatSession } = require("./active-session");
 
 /**
  * @typedef {{
@@ -23,6 +23,9 @@ const { listActiveSessions, pickActiveSession } = require("./active-session");
  *   adrPaths: string[],
  *   gitRemote: string|null,
  *   sessionId: string|null,
+ *   sessionLive: boolean,
+ *   sessionSource: string|null,
+ *   boundToChat: boolean,
  *   buildNatures: string[],
  *   measureNatures: string[],
  *   technicalHints: string[],
@@ -295,6 +298,9 @@ function loadProjectAt(cwd, opts = {}) {
     adrPaths: findAdrPaths(root, io),
     gitRemote: readGitRemote(root, io),
     sessionId: opts.sessionId || null,
+    sessionLive: Boolean(opts.sessionLive),
+    sessionSource: opts.sessionSource || null,
+    boundToChat: Boolean(opts.boundToChat),
     buildNatures,
     measureNatures,
     technicalHints,
@@ -302,35 +308,56 @@ function loadProjectAt(cwd, opts = {}) {
 }
 
 /**
- * Resolve active project from Grok session (preferred) or env/cwd fallback.
+ * Resolve project for BML from the **active chat** (Grok session cwd).
+ * Does not use the Meter process cwd unless no chat session exists.
+ *
  * @param {{
  *   preferCwd?: string|null,
  *   env?: NodeJS.ProcessEnv,
- *   listSessions?: typeof listActiveSessions,
- *   pickSession?: typeof pickActiveSession,
+ *   resolveSession?: typeof resolveChatSession,
  *   loadAt?: typeof loadProjectAt,
  * }} [opts]
  * @returns {ProjectContext}
  */
 function loadActiveProjectContext(opts = {}) {
   const env = opts.env ?? process.env;
-  const list = opts.listSessions || listActiveSessions;
-  const pick = opts.pickSession || pickActiveSession;
+  const resolve = opts.resolveSession || resolveChatSession;
   const loadAt = opts.loadAt || loadProjectAt;
 
-  const sessions = list({ env });
   const prefer =
     opts.preferCwd ||
     env.GUM_BML_CWD ||
     env.GUM_PROJECT_CWD ||
     null;
-  const session = pick(sessions, { preferCwd: prefer });
-  const cwd =
-    session?.cwd ||
-    prefer ||
-    process.cwd();
 
-  return loadAt(cwd, { sessionId: session?.session_id || null });
+  const session = resolve({ env, preferCwd: prefer });
+
+  if (session?.cwd) {
+    return loadAt(session.cwd, {
+      sessionId: session.session_id || null,
+      sessionLive: Boolean(session.live),
+      sessionSource: session.source || "active_sessions",
+      boundToChat: true,
+    });
+  }
+
+  // Explicit env override without a live chat row
+  if (prefer) {
+    return loadAt(prefer, {
+      sessionId: null,
+      sessionLive: false,
+      sessionSource: "env",
+      boundToChat: false,
+    });
+  }
+
+  // Last resort only — Meter process directory (not a chat project)
+  return loadAt(process.cwd(), {
+    sessionId: null,
+    sessionLive: false,
+    sessionSource: "meter_cwd",
+    boundToChat: false,
+  });
 }
 
 /**
@@ -341,12 +368,17 @@ function loadActiveProjectContext(opts = {}) {
 function formatProjectContextForPrompt(project) {
   if (!project?.cwd) return "";
   const lines = [
-    "## Active project (source of Build + Measure nature)",
+    "## Active chat project (source of Build + Measure nature)",
+    project.boundToChat
+      ? "Bound to the Terminal Grok chat session working directory — use THIS repo for the experiment."
+      : "WARNING: No live chat session cwd found; falling back. Prefer opening Grok in the target project.",
     `Path: ${project.cwd}`,
     project.name ? `Name: ${project.name}` : null,
     project.description ? `Description: ${project.description}` : null,
     project.gitRemote ? `Git remote: ${project.gitRemote}` : null,
-    project.sessionId ? `Grok session: ${project.sessionId}` : null,
+    project.sessionId
+      ? `Grok session: ${project.sessionId}${project.sessionLive ? " (live)" : ""}${project.sessionSource ? ` via ${project.sessionSource}` : ""}`
+      : null,
     project.packageManager ? `Package manager: ${project.packageManager}` : null,
     project.scripts?.length
       ? `Scripts: ${project.scripts.slice(0, 20).join(", ")}`
@@ -413,11 +445,140 @@ function suggestTechnicalContext(project) {
   return `${hints.join(" ")} (${project?.cwd || "project root"})`;
 }
 
+/**
+ * Detect Grok Usage Meter domain from CONTEXT / package.
+ * @param {ProjectContext} project
+ */
+function isGrokUsageMeterProject(project) {
+  const blob = [
+    project?.name,
+    project?.description,
+    project?.contextExcerpt,
+    project?.readmeExcerpt,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  return (
+    /grok-usage-meter|grok usage meter/.test(blob) ||
+    (/plan usage/.test(blob) &&
+      /context usage/.test(blob) &&
+      /meter/.test(blob) &&
+      /reading/.test(blob))
+  );
+}
+
+/**
+ * Synthesize a full six-section BML ticket from active project facts.
+ * Uses domain language from CONTEXT.md and real modules/scripts — not placeholders.
+ * @param {ProjectContext} project
+ * @returns {import('./template').TicketFields}
+ */
+function synthesizeTicketFromProject(project) {
+  if (isGrokUsageMeterProject(project)) {
+    return synthesizeMeterTicket(project);
+  }
+  return synthesizeGenericTicket(project);
+}
+
+/**
+ * Product experiment for the Meter as built today.
+ * @param {ProjectContext} project
+ */
+function synthesizeMeterTicket(project) {
+  const tech = [
+    "@CONTEXT.md",
+    "@src/lib/reading.js",
+    "@src/lib/meter-state.js",
+    "@src/lib/face.js",
+    "@src/lib/face-copy.js",
+    "@src/renderer/paint.js",
+    "@src/renderer/renderer.js",
+    "@src/lib/bml/",
+    "@src/lib/watcher.js",
+    "@scripts/watch-grok.js",
+    "@test/",
+    project.cwd ? `(root: ${project.cwd})` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    hypothesis:
+      "Operators running Terminal Grok keep the Meter visible and act on dual-needle Readings (plan % blue + context % dark) during real sessions — adjusting work (compact/handoff) before context is exhausted, not ignoring the overlay.",
+    build:
+      "Ship the smallest path that proves the Meter is usable mid-session with no blank dial:\n" +
+      "1) Reading path: auth.json → billing → signals.json → Face → dual needles (src/lib/reading.js, meter-state.js, face.js, renderer paint).\n" +
+      "2) Keep last-good Reading + fault marker when a poll fails (no snap-to-zero).\n" +
+      "3) Single-instance overlay + Watcher start/stop with Grok (pidfile + scripts/watch-grok.js).\n" +
+      "4) BML coach optional for admin bets; do not block the dial.\n" +
+      "Acceptance is visual + automated: GUM_SELFTEST / scripts/verify-meter-ui.js + npm test — no new product scope beyond reliability of the Reading→Face pipeline.",
+    measure:
+      "Over 2 weeks of real Terminal Grok use on this machine:\n" +
+      "· Pass: ≥80% of Grok sessions with Watcher/Meter running show a non-idle dual-needle Face within 5s of session open (numeric labels, not em-dash), and fault rate <10% of polls without last-good fallback.\n" +
+      "· Kill: <50% sessions get a usable Face within 5s, OR blank/cream plate with no needles on >20% cold starts, OR operators disable/quit the Meter within 3 sessions.\n" +
+      "· Sample: all sessions logged via active_sessions.json + weekly note on the experiment issue (counts: sessions, cold starts, faults, last-good holds).\n" +
+      "· Instrumentation: existing takeReading + buildFaceView; optional log line in main refreshUsage; npm test stays green (90+).",
+    learn:
+      "What did we learn? Persevere (double down on overlay reliability / BML), Pivot (different surface or metrics), or Kill (overlay not worth Watcher complexity). Evidence on the issue + decision label.",
+    acceptanceCriteria: [
+      "- [ ] npm test green (full suite)",
+      "- [ ] Cold start shows dual needles + numeric plan/context labels within 5s when signed in",
+      "- [ ] Last-good Reading held with fault marker when billing/signals fail; no snap-to-zero",
+      "- [ ] Single instance only; second launch focuses existing Meter",
+      "- [ ] Watcher starts Meter when Grok opens and quits it when Grok exits",
+      "- [ ] GUM_SELFTEST=1 or scripts/verify-meter-ui.js captures painted dial + labels",
+      "- [ ] CONTEXT.md domain terms (Meter, Reading, Plan usage, Context usage, Fault) unchanged or updated via grill",
+    ].join("\n"),
+    technicalContext: tech,
+  };
+}
+
+/**
+ * Generic admin ticket from project tree + CONTEXT.
+ * @param {ProjectContext} project
+ */
+function synthesizeGenericTicket(project) {
+  const name = project.name || path.basename(project.cwd || "project");
+  const desc = project.description || "the system under the active Grok session";
+  const buildLines = (project.buildNatures || []).slice(0, 5);
+  const measureLines = (project.measureNatures || []).slice(0, 5);
+
+  return {
+    hypothesis: `For ${name} (${desc}): the riskiest assumption is that the smallest shippable change in this repo will move a pre-registered outcome metric for the admin job — if wrong, we will burn build time without validated learning.`,
+    build: [
+      `Smallest Build in ${name} at ${project.cwd}:`,
+      ...buildLines.map((n) => `- ${n}`),
+      project.scripts?.includes("test")
+        ? "- Prove with existing test script before expanding scope."
+        : "- Add only the minimum check that Measure can observe.",
+    ].join("\n"),
+    measure: [
+      ...measureLines.map((n) => `- ${n}`),
+      "- Pass: ≥70% success on the primary outcome · kill <40% · duration 2 weeks · sample = weekly posts on the issue.",
+    ].join("\n"),
+    learn:
+      "What did we learn? Persevere / Pivot / Kill with evidence + decision label (persevere | pivot | kill-candidate).",
+    acceptanceCriteria: [
+      "- [ ] Hypothesis + numeric kill written before leaving Backlog",
+      "- [ ] Smallest Build shipped in this repo (PR or script path named)",
+      "- [ ] Measure path exists (test command, log, or manual weekly count)",
+      project.scripts?.includes("test") ? "- [ ] npm/pnpm/yarn test (or project test script) green" : null,
+      "- [ ] Technical Context @folders point at real paths for /grill-with-docs",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    technicalContext: suggestTechnicalContext(project),
+  };
+}
+
 module.exports = {
   loadProjectAt,
   loadActiveProjectContext,
   formatProjectContextForPrompt,
   suggestTechnicalContext,
+  synthesizeTicketFromProject,
+  isGrokUsageMeterProject,
   inferBuildNatures,
   inferMeasureNatures,
   excerpt,

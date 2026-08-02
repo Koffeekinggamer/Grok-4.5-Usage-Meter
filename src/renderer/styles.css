@@ -291,24 +291,6 @@ body.bml-open {
   margin: 2px 0 4px;
 }
 
-.bml-error {
-  margin: 0 0 6px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: #fef2f2;
-  color: #991b1b;
-  font-size: 10px;
-}
-
-.bml-status {
-  margin: 0 0 6px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: #ecfdf5;
-  color: #065f46;
-  font-size: 10px;
-}
-
 #bmlPanel textarea,
 #bmlPanel input[type="text"] {
   display: block;
@@ -342,16 +324,21 @@ body.bml-open {
 .chain li {
   margin: 2px 0;
   color: #57534e;
+  text-decoration: none;
+  transition: color 0.15s ease, opacity 0.15s ease;
 }
 
 .chain li.active {
   color: #1d4ed8;
   font-weight: 700;
+  text-decoration: none;
 }
 
+/* Completed skill steps — progress strikethrough */
 .chain li.done {
   color: #a8a29e;
   text-decoration: line-through;
+  opacity: 0.75;
 }
 
 .check {
