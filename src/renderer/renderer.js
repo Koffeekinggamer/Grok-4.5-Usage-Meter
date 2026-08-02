@@ -98,8 +98,10 @@ function applyFace(payload) {
     planEl.textContent = payload.plan || "";
   }
 
-  if (shellEl && payload.titleHint) {
-    shellEl.title = payload.titleHint;
+  if (shellEl) {
+    const project = payload.efficiency?.project;
+    const hint = payload.titleHint || "";
+    shellEl.title = project ? `${project} · ${hint}` : hint;
   }
 
   if (payload.boost) applyBoostUi(payload.boost);

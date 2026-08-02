@@ -240,16 +240,8 @@ function drawEfficiencyPanel(ctx, efficiency, box) {
     by += 32;
   }
 
-  // Project name (estimate + boost button sit below in HTML)
-  const project = efficiency?.project || "";
-  ctx.fillStyle = "rgba(120, 113, 108, 0.95)";
-  ctx.font = "600 9px 'Avenir Next', 'Segoe UI', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const maxChars = 22;
-  const shown =
-    project.length > maxChars ? `${project.slice(0, maxChars - 1)}…` : project;
-  ctx.fillText(shown, x + w / 2, y + h - 72);
+  // Project name is not painted on the face (keeps the panel clean).
+  // Available via efficiency.project for tooltips / boost.
 
   if (efficiency?.hasFault) {
     ctx.beginPath();

@@ -95,7 +95,7 @@ describe("drawMeterFace", () => {
     assert.ok(texts.includes("Arch"));
     assert.ok(texts.includes("Eff"));
     assert.ok(texts.includes("UI"));
-    assert.ok(texts.includes("demo-app"));
+    assert.ok(!texts.includes("demo-app"), "project name is not painted on face");
   });
 
   it("draws fault marker when hasFault", () => {
