@@ -1,7 +1,7 @@
 {
   "name": "grok-usage-meter",
   "version": "1.0.0",
-  "description": "Always-on-top overlay for Terminal Grok 4.5 plan + context usage and open-project efficiency (architecture, code efficiency, UI)",
+  "description": "Always-on-top analog needle overlay for Terminal Grok 4.5 plan + context usage",
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {

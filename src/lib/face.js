@@ -10,22 +10,11 @@ const {
 const {
   LEGEND,
   LEGEND_ON_DEMAND,
-  EFFICIENCY_LEGEND,
   faultPlan,
-  faultEfficiencyLine,
   planLine,
-  projectLine,
   titleHint,
   legendText,
 } = require("./face-copy");
-const { estimateBoostEffort, MIN_TARGET } = require("./boost");
-
-/** Architecture needle / bar — indigo */
-const ARCH_COLOR = "#4f46e5";
-/** Code efficiency — teal */
-const EFF_COLOR = "#0d9488";
-/** UI perfection — amber */
-const UI_COLOR = "#d97706";
 
 /**
  * @typedef {{
@@ -37,14 +26,6 @@ const UI_COLOR = "#d97706";
  * }} NeedleFace
  *
  * @typedef {{
- *   percent: number,
- *   label: string,
- *   color: string,
- *   key: string,
- *   legend: string,
- * }} EfficiencyBar
- *
- * @typedef {{
  *   cursor: NeedleFace,
  *   other: NeedleFace,
  *   plan: string,
@@ -54,101 +35,13 @@ const UI_COLOR = "#d97706";
  *   showingLastGood: boolean,
  *   hasFault: boolean,
  *   account: string,
- *   efficiency: {
- *     architecture: EfficiencyBar,
- *     codeEfficiency: EfficiencyBar,
- *     uiPerfection: EfficiencyBar,
- *     overall: number,
- *     project: string,
- *     hasFault: boolean,
- *     showingLastGood: boolean,
- *     estimate: {
- *       timeLabel: string,
- *       tokensLabel: string,
- *       detail: string,
- *       totalGap: number,
- *     }|null,
- *   },
  * }} Face
  */
 
 /**
- * @param {number} percent
- * @param {string} color
- * @param {string} key
- * @param {string} legend
- * @returns {EfficiencyBar}
- */
-function barFromPercent(percent, color, key, legend) {
-  const p = Math.max(0, Math.min(Number(percent) || 0, 100));
-  return {
-    percent: p,
-    label: String(Math.round(p)),
-    color,
-    key,
-    legend,
-  };
-}
-
-/**
- * @param {import('./efficiency').EfficiencyReading} reading
- */
-function efficiencyFromReading(reading) {
-  const est = estimateBoostEffort(reading, { minTarget: MIN_TARGET });
-  return {
-    architecture: barFromPercent(
-      reading.architecture,
-      ARCH_COLOR,
-      "architecture",
-      EFFICIENCY_LEGEND.architecture
-    ),
-    codeEfficiency: barFromPercent(
-      reading.codeEfficiency,
-      EFF_COLOR,
-      "codeEfficiency",
-      EFFICIENCY_LEGEND.codeEfficiency
-    ),
-    uiPerfection: barFromPercent(
-      reading.uiPerfection,
-      UI_COLOR,
-      "uiPerfection",
-      EFFICIENCY_LEGEND.uiPerfection
-    ),
-    overall: reading.overall,
-    project: projectLine(reading),
-    hasFault: false,
-    showingLastGood: false,
-    estimate: est
-      ? {
-          timeLabel: est.timeLabel,
-          tokensLabel: est.tokensLabel,
-          detail: est.detail,
-          totalGap: est.totalGap,
-        }
-      : null,
-  };
-}
-
-/**
- * @param {import('./efficiency').EfficiencyFault|null} fault
- */
-function efficiencyFaultFace(fault) {
-  return {
-    architecture: barFromPercent(0, "#c23b22", "architecture", EFFICIENCY_LEGEND.architecture),
-    codeEfficiency: barFromPercent(0, "#c23b22", "codeEfficiency", EFFICIENCY_LEGEND.codeEfficiency),
-    uiPerfection: barFromPercent(0, "#c23b22", "uiPerfection", EFFICIENCY_LEGEND.uiPerfection),
-    overall: 0,
-    project: faultEfficiencyLine(fault),
-    hasFault: true,
-    showingLastGood: false,
-    estimate: null,
-  };
-}
-
-/**
  * Reading → face targets (angles, colors, labels). No animation state.
  * @param {import('./reading').Reading} reading
- * @returns {Omit<Face, 'showingLastGood'|'hasFault'|'efficiency'>}
+ * @returns {Omit<Face, 'showingLastGood'|'hasFault'>}
  */
 function faceFromReading(reading) {
   const dual = dualPercents(reading);
@@ -205,7 +98,7 @@ function faceFromReading(reading) {
 /**
  * Cold Fault face (no last-good Reading).
  * @param {import('./reading').Fault|null} fault
- * @returns {Omit<Face, 'efficiency'>}
+ * @returns {Face}
  */
 function faultFace(fault) {
   const legend = { ...LEGEND };
@@ -240,34 +133,12 @@ function faultFace(fault) {
  *   reading: import('./reading').Reading|null,
  *   fault: import('./reading').Fault|null,
  *   showingLastGood: boolean,
- *   efficiencyReading?: import('./efficiency').EfficiencyReading|null,
- *   efficiencyFault?: import('./efficiency').EfficiencyFault|null,
- *   showingLastGoodEfficiency?: boolean,
  * }} state
  * @returns {Face}
  */
 function buildFace(state) {
-  /** @type {Face['efficiency']} */
-  let efficiency;
-  if (state.efficiencyReading) {
-    efficiency = efficiencyFromReading(state.efficiencyReading);
-    if (state.showingLastGoodEfficiency) {
-      efficiency = {
-        ...efficiency,
-        project: projectLine(state.efficiencyReading, { showingLastGood: true }),
-        showingLastGood: true,
-        hasFault: Boolean(state.efficiencyFault),
-      };
-    }
-  } else {
-    efficiency = efficiencyFaultFace(state.efficiencyFault || null);
-  }
-
   if (!state.reading) {
-    return {
-      ...faultFace(state.fault),
-      efficiency,
-    };
+    return faultFace(state.fault);
   }
 
   const base = faceFromReading(state.reading);
@@ -276,7 +147,6 @@ function buildFace(state) {
     plan: planLine(state.reading, { showingLastGood: state.showingLastGood }),
     showingLastGood: state.showingLastGood,
     hasFault: Boolean(state.fault),
-    efficiency,
   };
 }
 
@@ -294,7 +164,6 @@ function faceFrame(face, angles) {
     otherArcColor: face.other.arcColor,
     cursorArcColor: face.cursor.arcColor,
     hasFault: face.hasFault,
-    efficiency: face.efficiency,
   };
 }
 
@@ -303,8 +172,4 @@ module.exports = {
   faultFace,
   buildFace,
   faceFrame,
-  efficiencyFromReading,
-  ARCH_COLOR,
-  EFF_COLOR,
-  UI_COLOR,
 };

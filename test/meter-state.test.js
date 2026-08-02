@@ -5,7 +5,6 @@ const assert = require("node:assert/strict");
 const {
   emptyMeterState,
   reduceMeterState,
-  reduceEfficiencyState,
   buildFaceView,
 } = require("../src/lib/meter-state");
 
@@ -29,20 +28,6 @@ const reading = {
   billingCycleEnd: null,
   displayMessage: null,
   email: "a@b.c",
-};
-
-const efficiencyReading = {
-  architecture: 72,
-  codeEfficiency: 65,
-  uiPerfection: 58,
-  overall: 66,
-  projectName: "demo-app",
-  projectRoot: "/tmp/demo-app",
-  hasUiSurface: true,
-  fileCount: 40,
-  notes: [],
-  sessionId: "s1",
-  source: "active-session",
 };
 
 describe("reduceMeterState", () => {
@@ -77,65 +62,10 @@ describe("reduceMeterState", () => {
   });
 
   it("buildFaceView exposes Face DTO without snap-to-zero", () => {
-    let state = reduceMeterState(emptyMeterState(), { ok: true, reading });
-    state = reduceEfficiencyState(state, {
-      ok: true,
-      reading: efficiencyReading,
-    });
+    const state = reduceMeterState(emptyMeterState(), { ok: true, reading });
     const face = buildFaceView(state);
     assert.equal(face.cursor.label, "10");
     assert.equal(face.other.label, "42");
-    assert.equal(face.efficiency.architecture.label, "72");
-    assert.equal(face.efficiency.project, "demo-app");
-  });
-});
-
-describe("reduceEfficiencyState", () => {
-  it("holds last-good only on transient scan faults", () => {
-    const prev = reduceEfficiencyState(emptyMeterState(), {
-      ok: true,
-      reading: efficiencyReading,
-    });
-    assert.equal(prev.efficiencyReading.architecture, 72);
-
-    const next = reduceEfficiencyState(prev, {
-      ok: false,
-      fault: { kind: "unreadable", message: "io" },
-    });
-    assert.equal(next.efficiencyReading.architecture, 72);
-    assert.equal(next.showingLastGoodEfficiency, true);
-    assert.equal(next.efficiencyFault.kind, "unreadable");
-  });
-
-  it("clears previous project when no project is open", () => {
-    const prev = reduceEfficiencyState(emptyMeterState(), {
-      ok: true,
-      reading: efficiencyReading,
-    });
-    const next = reduceEfficiencyState(prev, {
-      ok: false,
-      fault: { kind: "no-project", message: "gone" },
-    });
-    assert.equal(next.efficiencyReading, null);
-    assert.equal(next.showingLastGoodEfficiency, false);
-    assert.equal(next.efficiencyFault.kind, "no-project");
-  });
-
-  it("does not drop usage reading when efficiency updates", () => {
-    let state = reduceMeterState(emptyMeterState(), { ok: true, reading });
-    state = reduceEfficiencyState(state, {
-      ok: true,
-      reading: efficiencyReading,
-    });
-    assert.equal(state.reading.planPercentUsed, 10);
-    assert.equal(state.efficiencyReading.architecture, 72);
-
-    state = reduceEfficiencyState(state, {
-      ok: false,
-      fault: { kind: "no-project", message: "switched to home" },
-    });
-    assert.equal(state.reading.planPercentUsed, 10, "usage stays");
-    assert.equal(state.efficiencyReading, null);
   });
 });
 
@@ -145,16 +75,11 @@ describe("buildFaceView", () => {
       reading,
       fault: null,
       showingLastGood: false,
-      efficiencyReading,
-      efficiencyFault: null,
-      showingLastGoodEfficiency: false,
     });
     assert.equal(face.cursor.label, "10");
     assert.equal(face.other.label, "42");
     assert.equal(face.legend.cursor, "Plan");
     assert.equal(face.legend.other, "Ctx");
-    assert.equal(face.efficiency.codeEfficiency.label, "65");
-    assert.equal(face.efficiency.uiPerfection.label, "58");
   });
 
   it("renders cold fault without a reading", () => {
@@ -162,13 +87,8 @@ describe("buildFaceView", () => {
       reading: null,
       fault: { kind: "missing-auth", message: "x" },
       showingLastGood: false,
-      efficiencyReading: null,
-      efficiencyFault: { kind: "no-project", message: "x" },
-      showingLastGoodEfficiency: false,
     });
     assert.equal(face.cursor.label, "!");
     assert.equal(face.plan, "No Grok auth");
-    assert.equal(face.efficiency.project, "No project");
-    assert.equal(face.efficiency.hasFault, true);
   });
 });

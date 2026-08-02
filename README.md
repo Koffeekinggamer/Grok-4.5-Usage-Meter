@@ -1,24 +1,16 @@
 # Grok Usage Meter
 
-Always-on-top combined overlay for **Terminal Grok 4.5**:
-
-1. **Usage dial** — monthly plan + context (dual analog needles)  
-2. **Project efficiency** — Architecture · Code efficiency · UI perfection for the open project
+Always-on-top analog needle overlay for **Terminal Grok 4.5** plan + context usage.
 
 **Repo:** https://github.com/Koffeekinggamer/Grok-4.5-Usage-Meter
 
-Forked shape of [Token Usage Meter](https://github.com/Koffeekinggamer/Token-Usage-Meter) (Cursor), rewired for Grok, then extended with project scoring in the same window.
-
-| Zone | What it shows |
-|------|----------------|
-| Left dial | **Blue** = monthly plan · **Dark** = context window (or on-demand when capped) |
-| Right panel | **Arch** · **Eff** · **UI** bars for the focused project |
+Forked shape of [Token Usage Meter](https://github.com/Koffeekinggamer/Token-Usage-Meter) (Cursor), rewired for Grok.
 
 - Reads the signed-in account from `~/.grok/auth.json` (no manual token paste)
 - Polls `https://cli-chat-proxy.grok.com/v1/billing`
 - Reads active session context from `~/.grok/sessions/**/signals.json`
-- Scores the open project from live session `cwd` (or `GUM_PROJECT`)
-- Frameless, always-on-top overlay you can drag; double-click to refresh both sides
+- Dual needles: **blue = monthly plan**, **dark = context window** (or on-demand when capped)
+- Frameless, always-on-top gauge you can drag; double-click to refresh
 - **Single instance** — only one Meter overlay; a second launch focuses the first and exits (orphans are killed on start)
 - Optional Watcher auto-launches the Meter whenever Terminal Grok is open
 
@@ -72,58 +64,62 @@ npm run watch-grok
 
 The Meter re-reads `auth.json` on every poll so it picks up silent token refresh from the CLI. Tokens are never written to disk by this app.
 
-## Two independent tracks
-
-| Track | Scope | Behavior |
-|-------|--------|----------|
-| **Usage dial** (left) | Account plan + active session context | Keeps counting across project switches and home sessions |
-| **Efficiency panel** (right) | Open project only | Live: follows the newest focused Grok session `cwd` |
-
-Usage never depends on which project is open. Efficiency never freezes plan %.
-
-## Project efficiency (right panel)
-
-Scores the **currently open building project** on three criteria (0–100 heuristics):
-
-| Bar | Color | Criterion |
-|-----|-------|-----------|
-| Arch | Indigo | Architecture / code quality — modules, tests, docs, lint/types, CI |
-| Eff  | Teal   | Code efficiency — file sizes, god files, deps, depth, lockfiles |
-| UI   | Amber  | UI perfection — components, styles, a11y, responsive patterns |
-
-### How the project is chosen (live)
-
-| Priority | Source |
-|----------|--------|
-| 1 | Newest **live** Grok session with a focused project `cwd` |
-| 2 | **Session edits** — when Grok’s cwd is home (common for Grok Build), infer from recent `hunk_records.jsonl` file paths |
-| 3 | Recent session project cwd (pid just exited) |
-| 4 | `GUM_PROJECT` / `PEM_PROJECT` env fallback |
-| 5 | Fault: **No project** (usage dial still works) |
-
-Force a fixed path: `GUM_PROJECT_LOCK=1 GUM_PROJECT=/path/to/app`.
-
-The Meter watches `active_sessions.json` and re-scores when the open project changes.
-
 ## Controls
 
-- Drag the overlay to reposition
-- Double-click to force a refresh of **usage + efficiency**
-- **↑ 80%** button (efficiency panel) — launches **Grok headless** with carte blanche to raise Architecture, Code efficiency, and UI perfection each to **≥ 80%** (`grok --prompt-file … --cwd <project> --yolo --always-approve`)
-- Above the button: **approx time** and **token usage expectation** to hit ≥80% (heuristic from score gaps + project size — not a hard quote)
-- Usage poll: `GUM_POLL_MS` (default `60000`) — plan/context, always on
-- Efficiency poll: `GUM_EFF_POLL_MS` (default `15000`) — plus session file watch
-- Position: `GUM_X` / `GUM_Y`
-- Grok binary override: `GUM_GROK_BIN`
+- Drag the dial to reposition
+- Double-click to force a refresh
+- **BML** button — open the Build-Measure-Learn coach (Build → Measure focus)
+- Poll interval: `GUM_POLL_MS` (default `60000`)
+
+## BML coach
+
+Follows [Practical AI Build-Measure-Learn onboarding](https://practical-office.github.io/bml-onboarding/): six-section tickets (admin jobs or product bets), column gates, WIP limit 3, and the Matt skill chain.
+
+**Skill chain (Run step → Grok embeds real `SKILL.md` from the downloaded Matt pack):**
+
+| Phase | Commands |
+|--------|----------|
+| Route | `/ask-matt` |
+| On-ramps (any admin job) | `/triage` · `/diagnosing-bugs` · `/research` · `/wayfinder` · `/improve-codebase-architecture` · `/prototype` · `/design` |
+| Build (required) | `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` |
+| Close | `/code-review` |
+
+Skills resolve from (first hit wins):
+
+1. `GUM_SKILLS_ROOT`
+2. `./.grok/skills` / `./skills`
+3. `~/.grok/skills`
+4. `~/.grok/vendor/mattpocock-skills/skills/engineering` (**Matt pack**)
+5. `~/.grok/bundled/skills` (e.g. `/design`)
+
+- Optional on-ramps can be **Skip**’d; **Tiny build** jumps to `/implement`
+- **Run step → Grok** injects slash command **plus full SKILL.md body** so Grok follows the installed skill, not a paraphrase
+- **Active project** (Grok session `cwd`, override `GUM_BML_CWD`): every inject includes Build/Measure natures derived from that repo (`CONTEXT.md`, scripts, tree). **Fill Build/Measure from project** prefills the ticket from those facts.
+- Inject cascade: resume active session → headless `grok -p` → clipboard fallback
+- GitHub: create `experiment` issues, post Measure comments, Learn labels via `gh`
+
+### GitHub setup
+
+```bash
+gh auth refresh -s project,read:project,repo
+```
+
+| Env | Default | Purpose |
+|-----|---------|---------|
+| `GUM_BML_OWNER` | `Book-IQ` | Project owner |
+| `GUM_BML_PROJECT` | `1` | BML project number |
+| `GUM_BML_REPO` | `Book-IQ/bookiqv1-rc` | Issues repo |
+| `GUM_BML_CWD` | (process cwd) | Preferred Grok inject cwd |
+| `GUM_BML_YOLO` | unset | Set `1` to pass `--always-approve` on inject |
 
 ## Reliability
 
-- **Usage reading** — `src/lib/reading.js`
-- **Efficiency reading** — `src/lib/efficiency.js` + `src/lib/score.js` + `src/lib/project.js`
-- **Meter state** — `src/lib/meter-state.js` (last-good for both sides)
+- **Reading** — `src/lib/reading.js` (signed-in account → plan + context)
+- **Meter state** — `src/lib/meter-state.js` (last-good reading + fault)
 - **Face DTO / copy** — `src/lib/face.js` + `src/lib/face-copy.js`
-- **Paint** — `src/renderer/paint.js` (dial + bars)
+- **Paint** — `src/renderer/paint.js`
 - **Watcher** — `src/lib/watcher.js` + `scripts/watch-grok.js`
+- **BML coach** — `src/lib/bml/*` (template, gates, skill chain, inject, github)
 
 ## Domain glossary
 

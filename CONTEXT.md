@@ -1,11 +1,11 @@
 # Grok Usage Meter
 
-An always-on-top overlay that shows Terminal Grok 4.5 plan usage, active-session context, and efficiency scores for the open building project.
+An always-on-top overlay that shows Terminal Grok 4.5 plan usage and active-session context as a dual-needle analog dial.
 
 ## Language
 
 **Meter**:
-The always-on-top overlay window that displays plan/context usage as two analog needles and project efficiency as three score bars.
+The always-on-top overlay window that displays plan and context usage as two analog needles.
 _Avoid_: Widget, HUD, dashboard, gauge app
 
 **Plan usage**:
@@ -20,50 +20,38 @@ _Avoid_: Total plan usage, historical average
 Optional overage beyond the included monthly allowance when `onDemandCap` is enabled; preferred for the dark needle when cap > 0.
 _Avoid_: Plan pool
 
-**Open project**:
-The filesystem root of the project Terminal Grok is currently working in — usually the live session `cwd` from `~/.grok/active_sessions.json`, or `GUM_PROJECT`.
-_Avoid_: Bare home directory, random folder without focus
-
-**Architecture score**:
-How well the open project is structured for maintainability: modules, tests, docs, lint/types, separation of concerns (indigo bar).
-_Avoid_: Subjective beauty, runtime performance
-
-**Code efficiency score**:
-How lean and navigable the codebase is: file sizes, god-file pressure, dependency bulk, depth, lockfiles (teal bar).
-_Avoid_: Micro-benchmarks, CPU profiling
-
-**UI perfection score**:
-How polished the user-facing surface is: components, styles, accessibility, responsive patterns (amber bar). Backend-only projects score lower with a “no UI” note.
-_Avoid_: Pixel-perfect design critique without source signals
-
 **Reading**:
 A single successful snapshot of plan usage (and context/on-demand) for the signed-in Grok account.
 _Avoid_: Sample, poll result, metric
-
-**Efficiency reading**:
-A single successful snapshot of the three project scores for the open project.
-_Avoid_: Lint report, CI summary
 
 **Signed-in account**:
 The Grok identity currently authenticated in the local Terminal Grok CLI, discovered only via `~/.grok/auth.json`.
 _Avoid_: Manual API key paste, browser cookie, login form inside the Meter
 
 **Last-good reading**:
-The most recent successful **usage** reading still shown when a later plan/context refresh fails. For efficiency, last-good is held only for transient scan faults on the same open project — switching projects or leaving all projects clears the previous project's bars.
+The most recent successful reading still shown on the Meter when a later refresh fails.
 _Avoid_: Cache, stale data (as a product feature name)
 
-**Live project tracking**:
-Efficiency always re-resolves the open project from Terminal Grok sessions so scores follow whichever project is currently open; plan usage keeps counting regardless.
-_Avoid_: Locked env project path as the default
-
-**Boost to 80%**:
-The efficiency-panel control that launches a carte-blanche Grok headless run to raise Architecture, Code efficiency, and UI perfection each to at least 80% for the open project.
-_Avoid_: Manual checklist, local lint-only fix
-
 **Fault state**:
-A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, no project, missing auth file).
+A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, missing auth file).
 _Avoid_: Crash, error toast, dialog
 
 **Watcher**:
 The background process that starts the Meter when Terminal Grok opens and stops the Meter when Grok closes.
 _Avoid_: Autostart service, daemon, LaunchAgent (implementation detail)
+
+**BML coach**:
+The Meter panel that runs Build → Measure experiment discipline from Practical AI’s Build-Measure-Learn onboarding: ticket gates, skill chain, Grok inject, and GitHub board sync.
+_Avoid_: Generic settings panel, chat sidebar
+
+**Experiment ticket**:
+One GitHub issue with the six-section BML template (Hypothesis, Build, Measure with numeric kill, Learn, Acceptance Criteria, Technical Context) and the `experiment` label.
+_Avoid_: Vague feature request, unlabelled backlog card
+
+**Skill step**:
+One ordered Build-column command in the coach chain. Inject embeds the installed Matt/Grok `SKILL.md` body (from `~/.grok/vendor/mattpocock-skills` or bundled skills). Main flow: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement`. On-ramps for any admin job: `/ask-matt`, `/triage`, `/diagnosing-bugs`, `/research`, `/wayfinder`, `/improve-codebase-architecture`, `/prototype`, `/design`, then close with `/code-review`.
+_Avoid_: Ad-hoc prompt, random slash command, paraphrased skill instructions
+
+**Active project**:
+The Terminal Grok session working directory (from `~/.grok/active_sessions.json`), used as the source of truth for BML **Build nature** and **Measure nature** (package scripts, `CONTEXT.md`, tree, remotes).
+_Avoid_: Generic templates disconnected from the repo under the needles

@@ -11,32 +11,184 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="shell" title="">
-      <canvas id="gauge" width="368" height="228"></canvas>
-      <div id="meta">
-        <div id="label" aria-live="polite">
-          <span id="cursorPct" class="pct cursor">—</span>
-          <span class="sep">·</span>
-          <span id="otherPct" class="pct other">—</span>
+    <div id="app">
+      <div id="shell" title="">
+        <canvas id="gauge" width="200" height="200"></canvas>
+        <div id="meta">
+          <div id="label" aria-live="polite">
+            <span id="cursorPct" class="pct cursor">—</span>
+            <span class="sep">·</span>
+            <span id="otherPct" class="pct other">—</span>
+          </div>
+          <div id="legend" hidden>
+            <span id="legendCursor" class="leg cursor"></span>
+            <span class="sep">·</span>
+            <span id="legendOther" class="leg other"></span>
+          </div>
+          <div id="plan"></div>
         </div>
-        <div id="legend" hidden>
-          <span id="legendCursor" class="leg cursor"></span>
-          <span class="sep">·</span>
-          <span id="legendOther" class="leg other"></span>
+        <div id="bmlBar">
+          <button
+            type="button"
+            id="bmlBtn"
+            title="Build-Measure-Learn coach"
+            aria-expanded="false"
+            aria-controls="bmlPanel"
+          >
+            BML
+          </button>
+          <span id="bmlStageChip" class="chip" hidden></span>
         </div>
-        <div id="plan"></div>
       </div>
-      <div id="boostEstimate" hidden title="">
-        <div id="boostTime">~—</div>
-        <div id="boostTokens">~— tok</div>
+
+      <div id="bmlPanel" hidden>
+        <header class="bml-head">
+          <strong>BML coach</strong>
+          <span id="bmlWip" class="muted"></span>
+        </header>
+
+        <p id="bmlError" class="bml-error" hidden></p>
+        <p id="bmlStatus" class="bml-status" hidden></p>
+
+        <section class="bml-section">
+          <div class="row">
+            <label class="muted">Stage</label>
+            <span id="bmlStage" class="pill">Backlog</span>
+          </div>
+          <div id="bmlIssue" class="issue muted">No experiment selected</div>
+          <div class="btn-row">
+            <button type="button" id="bmlRefresh" class="btn ghost">
+              Refresh WIP
+            </button>
+            <button type="button" id="bmlAdvance" class="btn">
+              Advance stage
+            </button>
+          </div>
+          <p id="bmlGate" class="muted small"></p>
+        </section>
+
+        <section class="bml-section" id="bmlCreateSection">
+          <div class="row">
+            <strong class="small">New admin job / experiment</strong>
+          </div>
+          <p id="bmlProject" class="muted small"></p>
+          <div class="btn-row">
+            <button type="button" id="bmlFromProject" class="btn ghost">
+              Fill Build/Measure from project
+            </button>
+          </div>
+          <textarea
+            id="fHypothesis"
+            rows="2"
+            placeholder="Hypothesis — what must be true for this admin job?"
+          ></textarea>
+          <textarea
+            id="fBuild"
+            rows="2"
+            placeholder="Build — smallest change/process to test it"
+          ></textarea>
+          <textarea
+            id="fMeasure"
+            rows="2"
+            placeholder="Measure — ≥pass · kill <N · duration"
+          ></textarea>
+          <textarea
+            id="fAC"
+            rows="2"
+            placeholder="Acceptance Criteria (observable Build done)"
+          ></textarea>
+          <textarea
+            id="fTech"
+            rows="1"
+            placeholder="Technical Context @folders @SOPs"
+          ></textarea>
+          <div class="btn-row">
+            <button type="button" id="bmlCreate" class="btn primary">
+              Create on GitHub
+            </button>
+          </div>
+        </section>
+
+        <section class="bml-section" id="bmlBuildSection">
+          <div class="row">
+            <strong class="small">Matt skill chain (installed SKILL.md)</strong>
+            <button type="button" id="bmlTiny" class="btn ghost xs">
+              Tiny build
+            </button>
+          </div>
+          <p class="muted small" id="bmlChainHint">
+            ✓ = SKILL.md found · Skip optional on-ramps · Run embeds full skill body
+          </p>
+          <ol id="bmlChain" class="chain"></ol>
+          <div class="btn-row">
+            <button type="button" id="bmlRun" class="btn primary">
+              Run step → Grok
+            </button>
+            <button type="button" id="bmlSkip" class="btn ghost">Skip</button>
+            <button type="button" id="bmlNext" class="btn ghost">Next</button>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="bmlShipped" />
+            Smallest test shipped
+          </label>
+          <label class="check">
+            <input type="checkbox" id="bmlMeasurePath" />
+            Measure path named
+          </label>
+        </section>
+
+        <section class="bml-section" id="bmlMeasureSection">
+          <div class="row">
+            <strong class="small">Measure</strong>
+          </div>
+          <input
+            id="mValue"
+            type="text"
+            placeholder="This week value (e.g. 55%)"
+          />
+          <textarea
+            id="mText"
+            rows="2"
+            placeholder="Weekly numbers / notes"
+          ></textarea>
+          <div class="btn-row">
+            <button type="button" id="bmlPostMeasure" class="btn primary">
+              Post to issue
+            </button>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="mDuration" />
+            Duration elapsed
+          </label>
+          <label class="check">
+            <input type="checkbox" id="mKill" />
+            Kill threshold hit
+          </label>
+          <ul id="mNotes" class="notes muted small"></ul>
+        </section>
+
+        <section class="bml-section" id="bmlLearnSection">
+          <div class="row">
+            <strong class="small">Learn (light)</strong>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn ghost" data-learn="persevere">
+              Persevere
+            </button>
+            <button type="button" class="btn ghost" data-learn="pivot">
+              Pivot
+            </button>
+            <button type="button" class="btn ghost" data-learn="kill-candidate">
+              Kill
+            </button>
+          </div>
+          <textarea
+            id="learnEvidence"
+            rows="2"
+            placeholder="Decision + evidence"
+          ></textarea>
+        </section>
       </div>
-      <button
-        id="boostBtn"
-        type="button"
-        title="Auto-prompt Grok with carte blanche to raise Arch · Eff · UI to ≥80%"
-      >
-        ↑ 80%
-      </button>
     </div>
     <script src="paint.js"></script>
     <script src="renderer.js"></script>
