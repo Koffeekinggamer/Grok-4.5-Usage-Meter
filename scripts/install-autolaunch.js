@@ -39,7 +39,9 @@ function installMac() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/Users/${os.userInfo().username}/.local/node/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <string>${path.dirname(nodeBin)}:/Users/${os.userInfo().username}/.local/node/bin:/Users/${os.userInfo().username}/.grok/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>GUM_METER_ROOT</key>
+    <string>${ROOT}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${path.join(os.tmpdir(), "grok-usage-meter-watch.log")}</string>

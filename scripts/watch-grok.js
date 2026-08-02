@@ -3,17 +3,19 @@
 /**
  * Keep the Grok Usage Meter in sync with Terminal Grok:
  * start when Grok opens, quit when Grok closes.
+ * Only one Meter instance is ever left running.
  */
 
-const { spawn, execFileSync } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { syncMeterWithGrok } = require("../src/lib/watcher");
 const { isTerminalGrokOpen } = require("../src/lib/grok-presence");
 const {
   defaultPidPath,
-  readPidFile,
   clearPidFile,
+  findMeterPids,
+  killOtherMeterInstances,
   isPidAlive,
 } = require("../src/lib/pidfile");
 
@@ -41,24 +43,7 @@ function isGrokRunning() {
 }
 
 function meterPids() {
-  const pids = new Set();
-  const fromFile = readPidFile(pidFile);
-  if (fromFile != null && isPidAlive(fromFile)) pids.add(fromFile);
-
-  try {
-    const out = execFileSync("pgrep", ["-fl", "Electron"], { encoding: "utf8" });
-    for (const line of out.split("\n")) {
-      if (!line.includes(ROOT)) continue;
-      if (!/Electron\.app\/Contents\/MacOS\/Electron/.test(line)) continue;
-      // Prefer the main app process, not GPU/Renderer helpers.
-      if (/Helper/.test(line)) continue;
-      const pid = Number(line.trim().split(/\s+/)[0]);
-      if (Number.isFinite(pid)) pids.add(pid);
-    }
-  } catch {
-    // none
-  }
-  return [...pids];
+  return findMeterPids(ROOT, { selfPid: process.pid });
 }
 
 function isMeterRunning() {
@@ -71,6 +56,17 @@ function startMeter() {
   const now = Date.now();
   if (now - lastStartAt < START_COOLDOWN_MS) return;
   lastStartAt = now;
+
+  // Collapse any orphans before spawn (single-instance Meter).
+  const extras = meterPids();
+  if (extras.length > 1) {
+    // Keep the first, kill the rest; if Electron single-lock is up, start is a no-op focus.
+    killOtherMeterInstances(ROOT, { selfPid: extras[0] });
+  }
+  if (isMeterRunning()) {
+    console.log("Meter already running — skip spawn");
+    return;
+  }
 
   const electronBin = resolveElectronBinary();
   const env = { ...process.env, GUM_METER: "1" };
@@ -96,6 +92,20 @@ function stopMeter() {
       console.log(`stop Grok Meter pid=${pid} failed: ${err.message}`);
     }
   }
+  // Escalation for stubborn orphans
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    if (pids.every((p) => !isPidAlive(p))) break;
+  }
+  for (const pid of pids) {
+    if (isPidAlive(pid)) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // ignore
+      }
+    }
+  }
   clearPidFile(pidFile);
 }
 
@@ -107,10 +117,13 @@ function tick() {
     stopMeter,
   });
   if (result === "started" || result === "stopped") {
-    console.log(`syncMeterWithGrok → ${result}`);
+    console.log(
+      `syncMeterWithGrok → ${result} (grok=${isGrokRunning()} meter=${isMeterRunning()})`
+    );
   }
 }
 
 console.log("watching for Terminal Grok (start on open, stop on close)…");
+console.log(`root=${ROOT} interval=${INTERVAL_MS}ms`);
 tick();
 setInterval(tick, INTERVAL_MS);
