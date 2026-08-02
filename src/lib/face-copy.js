@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Canonical Meter face copy (Plan usage / Context usage).
+ * Canonical Meter face copy (Plan / Context + Architecture / Efficiency / UI).
  * HTML and CSS are adapters — change labels here.
  */
 
@@ -13,6 +13,12 @@ const LEGEND = Object.freeze({
 const LEGEND_ON_DEMAND = Object.freeze({
   cursor: "Plan",
   other: "OD",
+});
+
+const EFFICIENCY_LEGEND = Object.freeze({
+  architecture: "Arch",
+  codeEfficiency: "Eff",
+  uiPerfection: "UI",
 });
 
 /**
@@ -37,6 +43,21 @@ function faultPlan(fault) {
 }
 
 /**
+ * @param {import('./efficiency').EfficiencyFault|null|undefined} fault
+ */
+function faultEfficiencyLine(fault) {
+  if (!fault) return "No project";
+  switch (fault.kind) {
+    case "no-project":
+      return "No project";
+    case "unreadable":
+      return "Unreadable";
+    default:
+      return "Eff fault";
+  }
+}
+
+/**
  * @param {{ membershipType?: string|null, isUnlimited?: boolean, model?: string|null }} reading
  * @param {{ showingLastGood?: boolean }} [opts]
  */
@@ -52,10 +73,24 @@ function planLine(reading, opts = {}) {
 }
 
 /**
+ * @param {{ projectName?: string, hasUiSurface?: boolean }} reading
+ * @param {{ showingLastGood?: boolean }} [opts]
+ */
+function projectLine(reading, opts = {}) {
+  const name = reading.projectName || "project";
+  const suffix = reading.hasUiSurface === false ? " · no UI" : "";
+  if (opts.showingLastGood) return `${name}${suffix} · held`;
+  return `${name}${suffix}`;
+}
+
+/**
  * @param {{ cursor: string, other: string }} legend
  */
 function titleHint(legend = LEGEND) {
-  return `Blue ${legend.cursor} = monthly plan · Dark ${legend.other} = context window · drag · double-click refresh`;
+  return (
+    `Blue ${legend.cursor} = monthly plan · Dark ${legend.other} = context · ` +
+    `Arch / Eff / UI = open project scores · drag · double-click refresh`
+  );
 }
 
 /**
@@ -68,8 +103,11 @@ function legendText(legend = LEGEND) {
 module.exports = {
   LEGEND,
   LEGEND_ON_DEMAND,
+  EFFICIENCY_LEGEND,
   faultPlan,
+  faultEfficiencyLine,
   planLine,
+  projectLine,
   titleHint,
   legendText,
 };

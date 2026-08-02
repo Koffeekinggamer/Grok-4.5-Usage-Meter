@@ -1,11 +1,11 @@
 # Grok Usage Meter
 
-An always-on-top overlay that shows Terminal Grok 4.5 plan usage and active-session context as a dual-needle analog dial.
+An always-on-top overlay that shows Terminal Grok 4.5 plan usage, active-session context, and efficiency scores for the open building project.
 
 ## Language
 
 **Meter**:
-The always-on-top overlay window that displays plan and context usage as two analog needles.
+The always-on-top overlay window that displays plan/context usage as two analog needles and project efficiency as three score bars.
 _Avoid_: Widget, HUD, dashboard, gauge app
 
 **Plan usage**:
@@ -20,20 +20,40 @@ _Avoid_: Total plan usage, historical average
 Optional overage beyond the included monthly allowance when `onDemandCap` is enabled; preferred for the dark needle when cap > 0.
 _Avoid_: Plan pool
 
+**Open project**:
+The filesystem root of the project Terminal Grok is currently working in — usually the live session `cwd` from `~/.grok/active_sessions.json`, or `GUM_PROJECT`.
+_Avoid_: Bare home directory, random folder without focus
+
+**Architecture score**:
+How well the open project is structured for maintainability: modules, tests, docs, lint/types, separation of concerns (indigo bar).
+_Avoid_: Subjective beauty, runtime performance
+
+**Code efficiency score**:
+How lean and navigable the codebase is: file sizes, god-file pressure, dependency bulk, depth, lockfiles (teal bar).
+_Avoid_: Micro-benchmarks, CPU profiling
+
+**UI perfection score**:
+How polished the user-facing surface is: components, styles, accessibility, responsive patterns (amber bar). Backend-only projects score lower with a “no UI” note.
+_Avoid_: Pixel-perfect design critique without source signals
+
 **Reading**:
 A single successful snapshot of plan usage (and context/on-demand) for the signed-in Grok account.
 _Avoid_: Sample, poll result, metric
+
+**Efficiency reading**:
+A single successful snapshot of the three project scores for the open project.
+_Avoid_: Lint report, CI summary
 
 **Signed-in account**:
 The Grok identity currently authenticated in the local Terminal Grok CLI, discovered only via `~/.grok/auth.json`.
 _Avoid_: Manual API key paste, browser cookie, login form inside the Meter
 
 **Last-good reading**:
-The most recent successful reading still shown on the Meter when a later refresh fails.
+The most recent successful reading still shown on the Meter when a later refresh fails (usage and efficiency are held independently).
 _Avoid_: Cache, stale data (as a product feature name)
 
 **Fault state**:
-A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, missing auth file).
+A visible indication that the Meter cannot produce a fresh reading (missing sign-in, API failure, no project, missing auth file).
 _Avoid_: Crash, error toast, dialog
 
 **Watcher**:

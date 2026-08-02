@@ -28,6 +28,20 @@ const reading = {
   email: "a@b.c",
 };
 
+const efficiencyReading = {
+  architecture: 80,
+  codeEfficiency: 70,
+  uiPerfection: 60,
+  overall: 72,
+  projectName: "shop",
+  projectRoot: "/tmp/shop",
+  hasUiSurface: true,
+  fileCount: 12,
+  notes: [],
+  sessionId: "sess-1",
+  source: "env",
+};
+
 describe("faceFromReading", () => {
   it("builds dual needle targets for plan and context", () => {
     const face = faceFromReading(reading);
@@ -48,11 +62,15 @@ describe("buildFace", () => {
       reading,
       fault: { kind: "http", message: "boom" },
       showingLastGood: true,
+      efficiencyReading,
+      efficiencyFault: null,
+      showingLastGoodEfficiency: false,
     });
     assert.equal(face.cursor.label, "10");
     assert.equal(face.plan, "grok-4.5 · held");
     assert.equal(face.hasFault, true);
     assert.equal(face.showingLastGood, true);
+    assert.equal(face.efficiency.architecture.label, "80");
   });
 
   it("cold Fault uses face-copy plan line", () => {
@@ -60,21 +78,46 @@ describe("buildFace", () => {
       reading: null,
       fault: { kind: "unsigned-in", message: "x" },
       showingLastGood: false,
+      efficiencyReading: null,
+      efficiencyFault: { kind: "no-project", message: "x" },
+      showingLastGoodEfficiency: false,
     });
     assert.equal(face.cursor.label, "!");
     assert.equal(face.plan, "Sign in");
     assert.equal(face.legendText, "");
+    assert.equal(face.efficiency.project, "No project");
+  });
+
+  it("marks efficiency held state", () => {
+    const face = buildFace({
+      reading,
+      fault: null,
+      showingLastGood: false,
+      efficiencyReading,
+      efficiencyFault: { kind: "unreadable", message: "x" },
+      showingLastGoodEfficiency: true,
+    });
+    assert.equal(face.efficiency.showingLastGood, true);
+    assert.equal(face.efficiency.hasFault, true);
+    assert.match(face.efficiency.project, /held/);
   });
 });
 
 describe("faceFrame", () => {
-  it("maps Face + angles for paint", () => {
-    const face = faceFromReading(reading);
-    face.hasFault = false;
+  it("maps Face + angles for paint including efficiency", () => {
+    const face = buildFace({
+      reading,
+      fault: null,
+      showingLastGood: false,
+      efficiencyReading,
+      efficiencyFault: null,
+      showingLastGoodEfficiency: false,
+    });
     const frame = faceFrame(face, { cursor: -40, other: 10 });
     assert.equal(frame.cursorAngle, -40);
     assert.equal(frame.otherAngle, 10);
     assert.equal(frame.cursorColor, PLAN_NEEDLE_COLOR);
     assert.equal(frame.otherArcColor, face.other.arcColor);
+    assert.equal(frame.efficiency.uiPerfection.label, "60");
   });
 });

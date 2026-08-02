@@ -3,9 +3,11 @@
 const path = require("path");
 const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const { takeReading } = require("./lib/reading");
+const { takeEfficiencyReading } = require("./lib/efficiency");
 const {
   emptyMeterState,
   reduceMeterState,
+  reduceEfficiencyState,
   buildFaceView,
 } = require("./lib/meter-state");
 const {
@@ -15,15 +17,19 @@ const {
 } = require("./lib/pidfile");
 
 const POLL_MS = Number(process.env.GUM_POLL_MS) || 60_000;
+const EFF_POLL_MS = Number(process.env.GUM_EFF_POLL_MS) || 90_000;
 const OVERLAY_ASSERT_MS = Number(process.env.GUM_OVERLAY_MS) || 5_000;
 const pidFile = defaultPidPath(path.join(__dirname, ".."));
 let mainWindow = null;
 let pollTimer = null;
+let effPollTimer = null;
 let overlayTimer = null;
 /** @type {import('./lib/meter-state').MeterState} */
 let meterState = emptyMeterState();
 
-const SIZE = 200;
+/** Combined overlay: usage dial + efficiency panel */
+const WIDTH = 368;
+const HEIGHT = 200;
 
 /**
  * Park the dial on the primary display, top-right of the work area.
@@ -35,9 +41,9 @@ function defaultBounds() {
   const envX = Number(process.env.GUM_X);
   const envY = Number(process.env.GUM_Y);
   return {
-    width: SIZE,
-    height: SIZE,
-    x: Number.isFinite(envX) ? envX : x + width - SIZE - 24,
+    width: WIDTH,
+    height: HEIGHT,
+    x: Number.isFinite(envX) ? envX : x + width - WIDTH - 24,
     y: Number.isFinite(envY) ? envY : y + 24,
   };
 }
@@ -137,10 +143,25 @@ async function refreshUsage() {
   assertOverlay(mainWindow);
 }
 
+async function refreshEfficiency() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const event = await takeEfficiencyReading();
+  meterState = reduceEfficiencyState(meterState, event);
+  publishFace();
+  assertOverlay(mainWindow);
+}
+
+async function refreshAll() {
+  await Promise.all([refreshUsage(), refreshEfficiency()]);
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  refreshUsage();
+  if (effPollTimer) clearInterval(effPollTimer);
+  refreshAll();
   pollTimer = setInterval(refreshUsage, POLL_MS);
+  effPollTimer = setInterval(refreshEfficiency, EFF_POLL_MS);
 }
 
 function startOverlayAssert() {
@@ -196,12 +217,13 @@ app.on("will-quit", () => {
 
 app.on("window-all-closed", () => {
   if (pollTimer) clearInterval(pollTimer);
+  if (effPollTimer) clearInterval(effPollTimer);
   if (overlayTimer) clearInterval(overlayTimer);
   if (process.platform !== "darwin") app.quit();
 });
 
 ipcMain.handle("usage:refresh", async () => {
-  await refreshUsage();
+  await refreshAll();
 });
 
 ipcMain.on("window:drag", (_event, { dx, dy }) => {
